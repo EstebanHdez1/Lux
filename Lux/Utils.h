@@ -28,4 +28,7 @@ namespace LuxUtils {
     void ConfigureWindowsPerformanceMode();
     void PurgeWorkingSet();
 
+    // Renderizado vectorial del logo de Lux
+    void DrawLuxLogo(Gdiplus::Graphics& g, float x, float y, float size);
+
 } // namespace LuxUtils

@@ -1,5 +1,6 @@
 #include "SettingsWindow.h"
 #include "Utils.h"
+#include "Resource.h"
 #include <thread>
 
 SettingsWindow::SettingsWindow() = default;
@@ -73,6 +74,8 @@ void SettingsWindow::Show(HINSTANCE hInst, SettingsManager* pSettings, bool dark
         return;
     }
 
+    HICON hAppIcon = LoadIconW(hInst, MAKEINTRESOURCEW(IDI_APP_ICON));
+
     // Registrar clase de ventana si no existe
     WNDCLASSEXW wcSettings{ sizeof(wcSettings) };
     if (!GetClassInfoExW(hInst, SETTINGSWND_CLASS, &wcSettings)) {
@@ -81,6 +84,8 @@ void SettingsWindow::Show(HINSTANCE hInst, SettingsManager* pSettings, bool dark
         wcSettings.hInstance = hInst;
         wcSettings.lpszClassName = SETTINGSWND_CLASS;
         wcSettings.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wcSettings.hIcon = hAppIcon;
+        wcSettings.hIconSm = hAppIcon;
         RegisterClassExW(&wcSettings);
     }
 
@@ -99,8 +104,13 @@ void SettingsWindow::Show(HINSTANCE hInst, SettingsManager* pSettings, bool dark
     m_hSettingsWnd = CreateWindowExW(WS_EX_DLGMODALFRAME, SETTINGSWND_CLASS,
         title.c_str(),
         WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 480, 390,
+        CW_USEDEFAULT, CW_USEDEFAULT, 480, 435,
         nullptr, nullptr, hInst, this);
+
+    if (hAppIcon) {
+        SendMessageW(m_hSettingsWnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(hAppIcon));
+        SendMessageW(m_hSettingsWnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hAppIcon));
+    }
 
     LuxUtils::AllowDarkModeForWindow(m_hSettingsWnd, m_darkMode);
     BOOL dark = m_darkMode ? TRUE : FALSE;
@@ -108,7 +118,7 @@ void SettingsWindow::Show(HINSTANCE hInst, SettingsManager* pSettings, bool dark
     DWORD corner = DWMWCP_ROUND;
     DwmSetWindowAttribute(m_hSettingsWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
 
-    int y = 24;
+    int y = 94;
     HWND hLbl1 = CreateWindowExW(0, L"STATIC", L"Iniciar con Windows", WS_CHILD | WS_VISIBLE,
                                  28, y + 4, 240, 22, m_hSettingsWnd, nullptr, hInst, nullptr);
     HWND hBtn1 = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
@@ -144,7 +154,7 @@ void SettingsWindow::Show(HINSTANCE hInst, SettingsManager* pSettings, bool dark
     }
 
     // Sección de Actualizaciones
-    y += 62;
+    y += 56;
     HWND hLblUpdateTitle = CreateWindowExW(0, L"STATIC", L"Actualizaciones", WS_CHILD | WS_VISIBLE,
                                           28, y, 220, 22, m_hSettingsWnd, nullptr, hInst, nullptr);
     SendMessageW(hLblUpdateTitle, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontUI), TRUE);
@@ -266,6 +276,35 @@ void SettingsWindow::HandleUpdateCheckDone(const UpdateCheckResult& result) {
 
 LRESULT SettingsWindow::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc; GetClientRect(hwnd, &rc);
+        FillRect(hdc, &rc, m_hbrThemeBg);
+
+        Gdiplus::Graphics g(hdc);
+        LuxUtils::DrawLuxLogo(g, 28.0f, 16.0f, 48.0f);
+
+        Gdiplus::FontFamily fontFam(L"Segoe UI");
+        Gdiplus::Font fontHeaderTitle(&fontFam, 14.5f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
+        Gdiplus::Font fontHeaderSub(&fontFam, 9.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
+
+        Gdiplus::Color colorFg = m_darkMode ? Gdiplus::Color(255, 255, 255, 255) : Gdiplus::Color(255, 24, 24, 24);
+        Gdiplus::Color colorSub = m_darkMode ? Gdiplus::Color(255, 160, 160, 160) : Gdiplus::Color(255, 110, 110, 110);
+        Gdiplus::Color colorBorder = m_darkMode ? Gdiplus::Color(255, 56, 56, 56) : Gdiplus::Color(255, 225, 225, 225);
+
+        Gdiplus::SolidBrush brFg(colorFg);
+        Gdiplus::SolidBrush brSub(colorSub);
+
+        g.DrawString(L"Lux", -1, &fontHeaderTitle, Gdiplus::PointF(86.0f, 18.0f), &brFg);
+        g.DrawString(L"Control de brillo nativo para Windows", -1, &fontHeaderSub, Gdiplus::PointF(86.0f, 44.0f), &brSub);
+
+        Gdiplus::Pen penLine(colorBorder, 1.0f);
+        g.DrawLine(&penLine, 28.0f, 78.0f, static_cast<float>(rc.right - 28), 78.0f);
+
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
     case WM_ERASEBKGND: {
         HDC hdc = reinterpret_cast<HDC>(wp);
         RECT rc; GetClientRect(hwnd, &rc);

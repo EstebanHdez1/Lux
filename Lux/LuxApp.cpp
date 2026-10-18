@@ -33,11 +33,17 @@ bool LuxApp::Init(HINSTANCE hInst) {
     LuxUtils::SetPreferredThemeMode(m_darkMode);
     LuxUtils::FlushMenuThemes();
 
+#include "Resource.h"
+
+    HICON hAppIcon = LoadIconW(hInst, MAKEINTRESOURCEW(IDI_APP_ICON));
+
     // Ventana oculta de mensajes
     WNDCLASSEXW wc{ sizeof(wc) };
     wc.lpfnWndProc = &LuxApp::MsgWndProc;
     wc.hInstance = hInst;
     wc.lpszClassName = MSGWND_CLASS;
+    wc.hIcon = hAppIcon;
+    wc.hIconSm = hAppIcon;
     RegisterClassExW(&wc);
 
     m_hMsgWnd = CreateWindowExW(0, MSGWND_CLASS, APP_NAME, WS_POPUP,
@@ -54,6 +60,8 @@ bool LuxApp::Init(HINSTANCE hInst) {
     wcPanel.hInstance = hInst;
     wcPanel.lpszClassName = PANELWND_CLASS;
     wcPanel.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wcPanel.hIcon = hAppIcon;
+    wcPanel.hIconSm = hAppIcon;
     RegisterClassExW(&wcPanel);
 
     m_hPanelWnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
@@ -358,24 +366,14 @@ void LuxApp::PaintPanel(HDC hdcOut, const RECT& rc) {
     int footY = y;
     int footH = 30;
 
-    // Logo Tabler Sun antialiased en el footer
-    float logoCx = 30.0f;
-    float logoCy = footY + footH / 2.0f;
-    Gdiplus::Pen penSun(colorAccent, 1.8f);
-    penSun.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
-    float sunR = 4.0f;
-    g.DrawEllipse(&penSun, logoCx - sunR, logoCy - sunR, sunR * 2, sunR * 2);
-    for (int i = 0; i < 8; ++i) {
-        float a = i * 3.14159265f / 4.0f;
-        g.DrawLine(&penSun, logoCx + std::cos(a) * 6.6f, logoCy + std::sin(a) * 6.6f,
-                            logoCx + std::cos(a) * 9.2f, logoCy + std::sin(a) * 9.2f);
-    }
+    // Logo oficial de Lux en el footer
+    LuxUtils::DrawLuxLogo(g, 18.0f, footY + (footH - 24.0f) / 2.0f, 24.0f);
 
     // Nombre de marca "Lux"
     Gdiplus::StringFormat sfFoot;
     sfFoot.SetAlignment(Gdiplus::StringAlignmentNear);
     sfFoot.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-    Gdiplus::RectF rcFoot(46.0f, static_cast<float>(footY), w - 130.0f, static_cast<float>(footH));
+    Gdiplus::RectF rcFoot(48.0f, static_cast<float>(footY), w - 130.0f, static_cast<float>(footH));
     g.DrawString(APP_NAME, -1, fontTitle, rcFoot, &sfFoot, &brFg);
 
     m_rcBtnRefresh  = RECT{ w - 74, footY, w - 42, footY + footH };

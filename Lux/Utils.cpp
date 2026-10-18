@@ -113,4 +113,59 @@ namespace LuxUtils {
         SetProcessWorkingSetSize(GetCurrentProcess(), static_cast<SIZE_T>(-1), static_cast<SIZE_T>(-1));
     }
 
+    void DrawLuxLogo(Gdiplus::Graphics& g, float x, float y, float size) {
+        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+
+        float scale = size / 200.0f;
+
+        // 1. Estrella exterior curvada con gradiente (#00CFFF a #783BFF)
+        Gdiplus::GraphicsPath path;
+        Gdiplus::PointF p0(x + 100.0f * scale, y + 18.0f * scale);
+        Gdiplus::PointF c1a(x + 106.667f * scale, y + 59.333f * scale);
+        Gdiplus::PointF c1b(x + 130.667f * scale, y + 86.667f * scale);
+        Gdiplus::PointF p1(x + 172.0f * scale, y + 100.0f * scale);
+
+        Gdiplus::PointF c2a(x + 130.667f * scale, y + 106.667f * scale);
+        Gdiplus::PointF c2b(x + 106.667f * scale, y + 134.0f * scale);
+        Gdiplus::PointF p2(x + 100.0f * scale, y + 182.0f * scale);
+
+        Gdiplus::PointF c3a(x + 93.333f * scale, y + 134.0f * scale);
+        Gdiplus::PointF c3b(x + 69.333f * scale, y + 106.667f * scale);
+        Gdiplus::PointF p3(x + 28.0f * scale, y + 100.0f * scale);
+
+        Gdiplus::PointF c4a(x + 69.333f * scale, y + 86.667f * scale);
+        Gdiplus::PointF c4b(x + 93.333f * scale, y + 59.333f * scale);
+
+        path.AddBezier(p0, c1a, c1b, p1);
+        path.AddBezier(p1, c2a, c2b, p2);
+        path.AddBezier(p2, c3a, c3b, p3);
+        path.AddBezier(p3, c4a, c4b, p0);
+        path.CloseFigure();
+
+        Gdiplus::PointF ptStart(x, y);
+        Gdiplus::PointF ptEnd(x + size, y + size);
+        Gdiplus::Color colStart(255, 0x00, 0xCF, 0xFF); // #00CFFF
+        Gdiplus::Color colEnd(255, 0x78, 0x3B, 0xFF);   // #783BFF
+        Gdiplus::LinearGradientBrush gradBrush(ptStart, ptEnd, colStart, colEnd);
+        g.FillPath(&gradBrush, &path);
+
+        // 2. Estrella interior blanca
+        Gdiplus::PointF innerPts[8] = {
+            { x + 100.0f * scale, y + 68.0f * scale },
+            { x + 108.0f * scale, y + 92.0f * scale },
+            { x + 132.0f * scale, y + 100.0f * scale },
+            { x + 108.0f * scale, y + 108.0f * scale },
+            { x + 100.0f * scale, y + 132.0f * scale },
+            { x + 92.0f * scale,  y + 108.0f * scale },
+            { x + 68.0f * scale,  y + 100.0f * scale },
+            { x + 92.0f * scale,  y + 92.0f * scale }
+        };
+        Gdiplus::GraphicsPath innerPath;
+        innerPath.AddPolygon(innerPts, 8);
+        Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(242, 255, 255, 255));
+        g.FillPath(&whiteBrush, &innerPath);
+    }
+
 } // namespace LuxUtils

@@ -91,7 +91,7 @@ constexpr int IDC_BTN_UPDATE          = 2004;
 
 // Nombres de aplicación, versiones y clases de ventana
 inline const wchar_t* const APP_NAME          = L"Lux";
-inline const wchar_t* const APP_VERSION       = L"v1.0.0";
+inline const wchar_t* const APP_VERSION       = L"v1.0.1";
 inline const wchar_t* const GITHUB_API_LATEST = L"https://api.github.com/repos/EstebanHdez1/Lux/releases/latest";
 inline const wchar_t* const GITHUB_REPO_URL   = L"https://github.com/EstebanHdez1/Lux";
 inline const wchar_t* const MSGWND_CLASS      = L"Lux_MsgWnd";

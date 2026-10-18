@@ -59,6 +59,11 @@
     <ClInclude Include="SettingsWindow.h" />
     <ClInclude Include="LuxApp.h" />
     <ClInclude Include="Updater.h" />
+    <ClInclude Include="Resource.h" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ResourceCompile Include="Lux.rc" />
   </ItemGroup>
 
   <ItemGroup>
