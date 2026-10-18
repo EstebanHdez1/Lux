@@ -1,0 +1,37 @@
+# Visual Studio / MSBuild intermediate & cache files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.idb
+*.ipch
+
+# Build outputs and intermediate files
+*.obj
+*.ilk
+*.pdb
+*.tlog
+*.lastbuildstate
+*.recipe
+*.log
+*.lib
+*.exp
+*.tmp
+
+# Common output directories
+[Bb]in/
+[Oo]bj/
+x64/
+x86/
+Debug/
+Release/
+Lux/x64/
+Lux/Lux/
+Tests/x64/
+Tests/Tests/
+
+# Allow files in Releases
+!Releases/
+!Releases/Lux.exe
+!Releases/README.md
