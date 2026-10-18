@@ -28,10 +28,7 @@ Debug/
 Release/
 Lux/x64/
 Lux/Lux/
-Tests/x64/
-Tests/Tests/
 
-# Allow files in Releases
-!Releases/
-!Releases/Lux.exe
-!Releases/README.md
+# Excluir carpetas locales
+Releases/
+Tests/

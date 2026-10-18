@@ -7,14 +7,13 @@
 ## 📋 Tabla de Contenidos
 
 - [Características Principales](#-características-principales)
+- [Descargas y Releases](#-descargas-y-releases)
 - [Estructura del Proyecto](#-estructura-del-proyecto)
 - [Arquitectura Modular](#-arquitectura-modular)
 - [Requisitos](#-requisitos)
 - [Compilación y Construcción](#-compilación-y-construcción)
   - [Opción 1: Visual Studio 2022](#opción-1-visual-studio-2022-recomendado)
   - [Opción 2: MSBuild (Línea de Comandos)](#opción-2-msbuild-línea-de-comandos)
-- [Ejecución y Pruebas](#-ejecución-y-pruebas)
-- [Descargas y Releases](#-descargas-y-releases)
 - [Licencia](#-licencia)
 
 ---
@@ -36,42 +35,43 @@
 
 ---
 
+## 📦 Descargas y Releases
+
+Puedes descargar la versión ejecutable más reciente directamente desde la sección oficial de **[GitHub Releases](https://github.com/EstebanHdez1/Lux/releases)**.
+
+- **`Lux.exe`**: Binario 100% portable y autocontenido.
+- No requiere instalación ni runtimes externos.
+- Compatible con Windows 10 (2004+) y Windows 11.
+
+---
+
 ## 📁 Estructura del Proyecto
 
-El repositorio está estructurado en módulos claros y desacoplados:
+El código fuente de la aplicación está organizado en la carpeta `Lux/`:
 
 ```text
-├── Lux.sln                 # Solución completa de Visual Studio 2022
+├── Lux.sln                 # Solución de Visual Studio 2022
 ├── .gitignore              # Configuración de exclusión para Git y VS
 ├── README.md               # Documentación principal del proyecto
 │
-├── Lux/                    # Código fuente de la aplicación principal
-│   ├── Lux.vcxproj         # Proyecto C++ de la aplicación (Win32 GUI)
-│   ├── Common.h            # Constantes, estructuras y tipos comunes
-│   ├── Utils.h / .cpp      # Utilidades del sistema, DPI y APIs de modo oscuro
-│   ├── WmiBrightness.h/.cpp # Controlador de brillo WMI para pantallas internas
-│   ├── MonitorManager.h/.cpp # Detección EDID, DDC/CI y worker thread asíncrono
-│   ├── SettingsManager.h/.cpp # Gestión de .ini, autoinicio en registro y tema
-│   ├── TrayIcon.h / .cpp   # Icono vectorial procedural y menú contextual
-│   ├── SettingsWindow.h/.cpp # Ventana modal de ajustes y controles owner-draw
-│   ├── LuxApp.h / .cpp     # Coordinador principal de la app y panel flotante
-│   └── main.cpp            # Punto de entrada (wWinMain) y mutex de instancia única
-│
-├── Releases/               # Directorio para binarios estables listos para usar
-│   ├── Lux.exe             # Ejecutable compilado en modo Release (x64)
-│   └── README.md           # Guía de uso portátil
-│
-└── Tests/                  # Suite de pruebas y diagnósticos de hardware
-    ├── Tests.vcxproj       # Proyecto de consola para pruebas
-    ├── MonitorTest.cpp     # Diagnóstico de monitores, WMI y persistencia
-    └── RunTests.ps1        # Script PowerShell para compilar y ejecutar pruebas
+└── Lux/                    # Código fuente de la aplicación
+    ├── Lux.vcxproj         # Proyecto C++ de la aplicación (Win32 GUI)
+    ├── Common.h            # Constantes, estructuras y tipos comunes
+    ├── Utils.h / .cpp      # Utilidades del sistema, DPI y APIs de modo oscuro
+    ├── WmiBrightness.h/.cpp # Controlador de brillo WMI para pantallas internas
+    ├── MonitorManager.h/.cpp # Detección EDID, DDC/CI y worker thread asíncrono
+    ├── SettingsManager.h/.cpp # Gestión de .ini, autoinicio en registro y tema
+    ├── TrayIcon.h / .cpp   # Icono vectorial procedural y menú contextual
+    ├── SettingsWindow.h/.cpp # Ventana modal de ajustes y controles owner-draw
+    ├── LuxApp.h / .cpp     # Coordinador principal de la app y panel flotante
+    └── main.cpp            # Punto de entrada (wWinMain) y mutex de instancia única
 ```
 
 ---
 
 ## 🏛️ Arquitectura Modular
 
-La aplicación ha sido desglosada en clases con responsabilidades únicas:
+La aplicación está dividida en clases desacopladas y de fácil lectura:
 
 | Clase / Módulo | Responsabilidad |
 |---|---|
@@ -87,9 +87,9 @@ La aplicación ha sido desglosada en clases con responsabilidades únicas:
 
 ## 💻 Requisitos
 
-- **Sistema Operativo**: Windows 10 (versión 2004 o superior) o Windows 11 (recomendado para esquinas redondeadas y temas avanzados).
+- **Sistema Operativo**: Windows 10 (versión 2004 o superior) o Windows 11.
 - **Herramientas de Compilación**:
-  - Visual Studio 2022 (Community, Professional o Enterprise) con el paquete *Desarrollo para el escritorio con C++* (v143).
+  - Visual Studio 2022 con *Desarrollo para el escritorio con C++* (v143).
   - Windows 10 / 11 SDK.
 
 ---
@@ -104,32 +104,8 @@ La aplicación ha sido desglosada en clases con responsabilidades únicas:
 
 ### Opción 2: MSBuild (Línea de Comandos)
 
-Desde una consola de comandos con entorno de Visual Studio:
+Desde una consola de comandos para desarrolladores de Visual Studio:
 
 ```bat
 MSBuild Lux.sln /p:Configuration=Release /p:Platform=x64
 ```
-
----
-
-## 🧪 Ejecución y Pruebas
-
-Para verificar que el sistema operativo y tus monitores soportan DDC/CI y WMI sin necesidad de abrir la interfaz gráfica:
-
-Ejecuta el script incluido en la carpeta `Tests`:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File Tests\RunTests.ps1
-```
-
-El test imprimirá un informe detallado con:
-- Rendimiento y vaciado de memoria.
-- Estado de temas y registro de configuración.
-- Diagnóstico del subsistema WMI.
-- Nombre EDID, resolución y backend compatible de cada monitor detectado.
-
----
-
-## 📦 Descargas y Releases
-
-En la carpeta [`Releases/`](Releases/) se incluye el binario precompilado `Lux.exe`. Es 100% portable y no requiere instalación ni privilegios de administrador.
