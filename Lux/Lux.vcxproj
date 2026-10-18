@@ -45,7 +45,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;advapi32.lib;dwmapi.lib;dxva2.lib;ole32.lib;oleaut32.lib;wbemuuid.lib;comsuppw.lib;msimg32.lib;uxtheme.lib;gdiplus.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;advapi32.lib;dwmapi.lib;dxva2.lib;ole32.lib;oleaut32.lib;wbemuuid.lib;comsuppw.lib;msimg32.lib;uxtheme.lib;gdiplus.lib;comctl32.lib;wininet.lib;urlmon.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -58,6 +58,7 @@
     <ClInclude Include="TrayIcon.h" />
     <ClInclude Include="SettingsWindow.h" />
     <ClInclude Include="LuxApp.h" />
+    <ClInclude Include="Updater.h" />
   </ItemGroup>
 
   <ItemGroup>
@@ -69,6 +70,7 @@
     <ClCompile Include="TrayIcon.cpp" />
     <ClCompile Include="SettingsWindow.cpp" />
     <ClCompile Include="LuxApp.cpp" />
+    <ClCompile Include="Updater.cpp" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

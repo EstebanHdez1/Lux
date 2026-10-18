@@ -1,5 +1,6 @@
 #include "SettingsWindow.h"
 #include "Utils.h"
+#include <thread>
 
 SettingsWindow::SettingsWindow() = default;
 
@@ -7,6 +8,10 @@ SettingsWindow::~SettingsWindow() {
     if (m_hFontUI) {
         DeleteObject(m_hFontUI);
         m_hFontUI = nullptr;
+    }
+    if (m_hFontSmall) {
+        DeleteObject(m_hFontSmall);
+        m_hFontSmall = nullptr;
     }
 }
 
@@ -31,6 +36,7 @@ void SettingsWindow::UpdateTheme(bool darkMode, HBRUSH hbrThemeBg) {
         DwmSetWindowAttribute(m_hSettingsWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
         InvalidateRect(m_hSettingsWnd, nullptr, TRUE);
         if (m_hComboTheme) InvalidateRect(m_hComboTheme, nullptr, TRUE);
+        if (m_hBtnUpdate) InvalidateRect(m_hBtnUpdate, nullptr, TRUE);
     }
 }
 
@@ -83,12 +89,17 @@ void SettingsWindow::Show(HINSTANCE hInst, SettingsManager* pSettings, bool dark
                                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                                 CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     }
+    if (!m_hFontSmall) {
+        m_hFontSmall = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                   DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                   CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    }
 
     std::wstring title = std::wstring(L"Configuraci\u00F3n de ") + APP_NAME;
     m_hSettingsWnd = CreateWindowExW(WS_EX_DLGMODALFRAME, SETTINGSWND_CLASS,
         title.c_str(),
         WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 480, 320,
+        CW_USEDEFAULT, CW_USEDEFAULT, 480, 390,
         nullptr, nullptr, hInst, this);
 
     LuxUtils::AllowDarkModeForWindow(m_hSettingsWnd, m_darkMode);
@@ -97,21 +108,21 @@ void SettingsWindow::Show(HINSTANCE hInst, SettingsManager* pSettings, bool dark
     DWORD corner = DWMWCP_ROUND;
     DwmSetWindowAttribute(m_hSettingsWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
 
-    int y = 28;
+    int y = 24;
     HWND hLbl1 = CreateWindowExW(0, L"STATIC", L"Iniciar con Windows", WS_CHILD | WS_VISIBLE,
                                  28, y + 4, 240, 22, m_hSettingsWnd, nullptr, hInst, nullptr);
     HWND hBtn1 = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                                  370, y, 48, 24, m_hSettingsWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_TOGGLE_AUTOSTART)), hInst, nullptr);
     SendMessageW(hLbl1, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontUI), TRUE);
 
-    y += 50;
+    y += 48;
     HWND hLbl2 = CreateWindowExW(0, L"STATIC", L"Mostrar icono en la bandeja", WS_CHILD | WS_VISIBLE,
                                  28, y + 4, 260, 22, m_hSettingsWnd, nullptr, hInst, nullptr);
     HWND hBtn2 = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                                  370, y, 48, 24, m_hSettingsWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_TOGGLE_TRAYICON)), hInst, nullptr);
     SendMessageW(hLbl2, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontUI), TRUE);
 
-    y += 50;
+    y += 48;
     HWND hLbl3 = CreateWindowExW(0, L"STATIC", L"Tema de la aplicaci\u00F3n", WS_CHILD | WS_VISIBLE,
                                  28, y + 6, 220, 22, m_hSettingsWnd, nullptr, hInst, nullptr);
 
@@ -131,6 +142,21 @@ void SettingsWindow::Show(HINSTANCE hInst, SettingsManager* pSettings, bool dark
     if (m_pSettings) {
         ComboBox_SetCurSel(m_hComboTheme, static_cast<int>(m_pSettings->GetThemeMode()));
     }
+
+    // Sección de Actualizaciones
+    y += 62;
+    HWND hLblUpdateTitle = CreateWindowExW(0, L"STATIC", L"Actualizaciones", WS_CHILD | WS_VISIBLE,
+                                          28, y, 220, 22, m_hSettingsWnd, nullptr, hInst, nullptr);
+    SendMessageW(hLblUpdateTitle, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontUI), TRUE);
+
+    std::wstring initialVer = std::wstring(L"Versi\u00F3n instalada: ") + APP_VERSION;
+    m_hLblUpdateStatus = CreateWindowExW(0, L"STATIC", initialVer.c_str(), WS_CHILD | WS_VISIBLE,
+                                        28, y + 24, 230, 20, m_hSettingsWnd, nullptr, hInst, nullptr);
+    SendMessageW(m_hLblUpdateStatus, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontSmall), TRUE);
+
+    m_hBtnUpdate = CreateWindowExW(0, L"BUTTON", L"Buscar actualizaciones", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+                                  260, y + 8, 160, 32, m_hSettingsWnd,
+                                  reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_BTN_UPDATE)), hInst, nullptr);
 
     ShowWindow(m_hSettingsWnd, SW_SHOW);
     SetForegroundWindow(m_hSettingsWnd);
@@ -221,6 +247,23 @@ LRESULT CALLBACK SettingsWindow::ComboBoxSubclassProc(HWND hwnd, UINT msg, WPARA
     return DefSubclassProc(hwnd, msg, wp, lp);
 }
 
+void SettingsWindow::HandleUpdateCheckDone(const UpdateCheckResult& result) {
+    m_lastUpdateResult = result;
+    if (!result.success) {
+        SetWindowTextW(m_hLblUpdateStatus, result.errorMessage.c_str());
+        m_updateState = UpdateActionState::Check;
+    } else if (result.updateAvailable) {
+        std::wstring msg = L"\u00A1Nueva versi\u00F3n " + result.latestVersion + L" disponible!";
+        SetWindowTextW(m_hLblUpdateStatus, msg.c_str());
+        m_updateState = UpdateActionState::Download;
+    } else {
+        std::wstring msg = L"\u2713 Tienes la versi\u00F3n m\u00E1s reciente.";
+        SetWindowTextW(m_hLblUpdateStatus, msg.c_str());
+        m_updateState = UpdateActionState::Check;
+    }
+    if (m_hBtnUpdate) InvalidateRect(m_hBtnUpdate, nullptr, TRUE);
+}
+
 LRESULT SettingsWindow::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_ERASEBKGND: {
@@ -283,6 +326,54 @@ LRESULT SettingsWindow::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             return TRUE;
         }
 
+        if (dis->CtlID == IDC_BTN_UPDATE) {
+            RECT rc = dis->rcItem;
+            Gdiplus::Graphics g(dis->hDC);
+            g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+
+            Gdiplus::Color btnBg;
+            if (m_updateState == UpdateActionState::Download) {
+                btnBg = m_darkMode ? Gdiplus::Color(255, 96, 205, 255) : Gdiplus::Color(255, 0, 103, 192);
+            } else {
+                btnBg = m_darkMode ? Gdiplus::Color(255, 48, 48, 48) : Gdiplus::Color(255, 230, 230, 230);
+            }
+            Gdiplus::Color btnFg = (m_updateState == UpdateActionState::Download)
+                ? (m_darkMode ? Gdiplus::Color(255, 20, 20, 20) : Gdiplus::Color(255, 255, 255, 255))
+                : (m_darkMode ? Gdiplus::Color(255, 255, 255, 255) : Gdiplus::Color(255, 20, 20, 20));
+
+            float w = static_cast<float>(rc.right - rc.left);
+            float h = static_cast<float>(rc.bottom - rc.top);
+            float radius = 5.0f;
+
+            Gdiplus::GraphicsPath path;
+            path.AddArc(0.5f, 0.5f, radius * 2, radius * 2, 180, 90);
+            path.AddArc(w - radius * 2 - 1.0f, 0.5f, radius * 2, radius * 2, 270, 90);
+            path.AddArc(w - radius * 2 - 1.0f, h - radius * 2 - 1.0f, radius * 2, radius * 2, 0, 90);
+            path.AddArc(0.5f, h - radius * 2 - 1.0f, radius * 2, radius * 2, 90, 90);
+            path.CloseFigure();
+
+            Gdiplus::SolidBrush br(btnBg);
+            g.FillPath(&br, &path);
+
+            Gdiplus::Pen penBorder(m_darkMode ? Gdiplus::Color(255, 68, 68, 68) : Gdiplus::Color(255, 210, 210, 210), 1.0f);
+            g.DrawPath(&penBorder, &path);
+
+            std::wstring label;
+            if (m_updateState == UpdateActionState::Busy) label = L"Procesando...";
+            else if (m_updateState == UpdateActionState::Download) label = L"Actualizar ahora";
+            else label = L"Buscar actualizaciones";
+
+            Gdiplus::FontFamily fontFam(L"Segoe UI");
+            Gdiplus::Font fontBtn(&fontFam, 9.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
+            Gdiplus::SolidBrush brText(btnFg);
+            Gdiplus::StringFormat sf;
+            sf.SetAlignment(Gdiplus::StringAlignmentCenter);
+            sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+            Gdiplus::RectF rcF(0.0f, 0.0f, w, h);
+            g.DrawString(label.c_str(), -1, &fontBtn, rcF, &sf, &brText);
+            return TRUE;
+        }
+
         // Interruptor toggle moderno con GDI+ antialiased
         bool checked = false;
         if (m_pSettings) {
@@ -342,7 +433,50 @@ LRESULT SettingsWindow::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (m_onThemeChanged) m_onThemeChanged();
             InvalidateRect(hwnd, nullptr, TRUE);
             if (m_hComboTheme) InvalidateRect(m_hComboTheme, nullptr, TRUE);
+        } else if (id == IDC_BTN_UPDATE && HIWORD(wp) == BN_CLICKED) {
+            if (m_updateState == UpdateActionState::Check) {
+                m_updateState = UpdateActionState::Busy;
+                SetWindowTextW(m_hLblUpdateStatus, L"Buscando actualizaciones en GitHub...");
+                InvalidateRect(m_hBtnUpdate, nullptr, TRUE);
+
+                std::thread([hwnd]() {
+                    UpdateCheckResult res = Updater::CheckForUpdate();
+                    auto* pAlloc = new UpdateCheckResult(res);
+                    PostMessageW(hwnd, WM_UPDATE_CHECK_DONE, 0, reinterpret_cast<LPARAM>(pAlloc));
+                }).detach();
+            } else if (m_updateState == UpdateActionState::Download) {
+                m_updateState = UpdateActionState::Busy;
+                SetWindowTextW(m_hLblUpdateStatus, L"Descargando e instalando actualizaci\u00F3n...");
+                InvalidateRect(m_hBtnUpdate, nullptr, TRUE);
+
+                std::wstring downloadUrl = m_lastUpdateResult.downloadUrl;
+                std::thread([hwnd, downloadUrl]() {
+                    std::wstring err;
+                    bool ok = Updater::ApplyUpdate(downloadUrl, err);
+                    if (!ok) {
+                        auto* pAlloc = new UpdateCheckResult();
+                        pAlloc->success = false;
+                        pAlloc->errorMessage = err;
+                        PostMessageW(hwnd, WM_UPDATE_CHECK_DONE, 1, reinterpret_cast<LPARAM>(pAlloc));
+                    }
+                }).detach();
+            }
         }
+        return 0;
+    }
+
+    case WM_UPDATE_CHECK_DONE: {
+        auto* pRes = reinterpret_cast<UpdateCheckResult*>(lp);
+        if (pRes) {
+            if (wp == 1) { // Error al descargar/aplicar
+                SetWindowTextW(m_hLblUpdateStatus, pRes->errorMessage.c_str());
+                m_updateState = UpdateActionState::Check;
+            } else {
+                HandleUpdateCheckDone(*pRes);
+            }
+            delete pRes;
+        }
+        if (m_hBtnUpdate) InvalidateRect(m_hBtnUpdate, nullptr, TRUE);
         return 0;
     }
 
@@ -353,6 +487,8 @@ LRESULT SettingsWindow::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_DESTROY:
         m_hSettingsWnd = nullptr;
         m_hComboTheme = nullptr;
+        m_hLblUpdateStatus = nullptr;
+        m_hBtnUpdate = nullptr;
         return 0;
     }
 

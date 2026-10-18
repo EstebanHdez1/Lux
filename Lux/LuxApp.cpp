@@ -1,11 +1,16 @@
 #include "LuxApp.h"
 #include "Utils.h"
+#include "Updater.h"
 
 static const int BASE_PANEL_WIDTH = 340;
 static const int BASE_ROW_HEIGHT  = 74;
 
 bool LuxApp::Init(HINSTANCE hInst) {
     m_hInst = hInst;
+
+    // Limpiar restos de actualizaciones anteriores (.old / .new)
+    Updater::CleanOldFiles();
+
     m_msgTaskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
 
     // Activar modo de alto rendimiento y prioridad en Windows
