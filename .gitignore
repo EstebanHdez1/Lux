@@ -22,6 +22,11 @@
 # Common output directories
 [Bb]in/
 [Oo]bj/
+build/
+release/
+portable/
+*.zip
+*.exe
 x64/
 x86/
 Debug/

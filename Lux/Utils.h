@@ -19,6 +19,7 @@ namespace LuxUtils {
 
     // Rutas de ejecución y configuración
     std::wstring GetExePath();
+    std::wstring GetExeDir();
     std::wstring GetIniPath();
 
     // DPI y escala

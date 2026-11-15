@@ -44,6 +44,15 @@ namespace LuxUtils {
         return buf;
     }
 
+    std::wstring GetExeDir() {
+        std::wstring p = GetExePath();
+        size_t pos = p.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) {
+            return p.substr(0, pos);
+        }
+        return p;
+    }
+
     std::wstring GetIniPath() {
         std::wstring p = GetExePath();
         size_t dot = p.find_last_of(L'.');

@@ -116,16 +116,30 @@ UpdateCheckResult Updater::CheckForUpdate() {
     std::wstring latestVer(tag.begin(), tag.end());
     result.latestVersion = latestVer;
 
-    // Buscar la URL de descarga del ejecutable Lux.exe en los assets
+    // Buscar en los assets de GitHub Releases:
+    // Prioridad 1: Versión portable en archivo .zip (ej. Lux-v1.0.2-Windows-Portable.zip)
     std::string downloadUrlStr;
-    size_t exePos = json.find(".exe");
-    if (exePos != std::string::npos) {
-        // Retroceder para buscar el inicio de browser_download_url
-        size_t urlTagPos = json.rfind("\"browser_download_url\"", exePos);
+    size_t zipPos = json.find(".zip");
+    if (zipPos != std::string::npos) {
+        size_t urlTagPos = json.rfind("\"browser_download_url\"", zipPos);
         if (urlTagPos != std::string::npos) {
             size_t valStart = json.find("https://", urlTagPos);
-            if (valStart != std::string::npos && valStart < exePos) {
-                downloadUrlStr = json.substr(valStart, (exePos + 4) - valStart);
+            if (valStart != std::string::npos && valStart < zipPos) {
+                downloadUrlStr = json.substr(valStart, (zipPos + 4) - valStart);
+            }
+        }
+    }
+
+    // Prioridad 2: Fallback a archivo binario .exe directo
+    if (downloadUrlStr.empty()) {
+        size_t exePos = json.find(".exe");
+        if (exePos != std::string::npos) {
+            size_t urlTagPos = json.rfind("\"browser_download_url\"", exePos);
+            if (urlTagPos != std::string::npos) {
+                size_t valStart = json.find("https://", urlTagPos);
+                if (valStart != std::string::npos && valStart < exePos) {
+                    downloadUrlStr = json.substr(valStart, (exePos + 4) - valStart);
+                }
             }
         }
     }
@@ -142,6 +156,33 @@ UpdateCheckResult Updater::CheckForUpdate() {
     return result;
 }
 
+static std::wstring FindFileRecursive(const std::wstring& dir, const std::wstring& targetFilename) {
+    std::wstring searchPath = dir + L"\\*";
+    WIN32_FIND_DATAW fd;
+    HANDLE hFind = FindFirstFileW(searchPath.c_str(), &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return L"";
+
+    do {
+        if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
+        std::wstring fullPath = dir + L"\\" + fd.cFileName;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            std::wstring found = FindFileRecursive(fullPath, targetFilename);
+            if (!found.empty()) {
+                FindClose(hFind);
+                return found;
+            }
+        } else {
+            if (_wcsicmp(fd.cFileName, targetFilename.c_str()) == 0) {
+                FindClose(hFind);
+                return fullPath;
+            }
+        }
+    } while (FindNextFileW(hFind, &fd));
+
+    FindClose(hFind);
+    return L"";
+}
+
 bool Updater::ApplyUpdate(const std::wstring& downloadUrl, std::wstring& outError) {
     if (downloadUrl.empty()) {
         outError = L"URL de descarga no disponible.";
@@ -152,12 +193,65 @@ bool Updater::ApplyUpdate(const std::wstring& downloadUrl, std::wstring& outErro
     std::wstring newExe = currentExe + L".new";
     std::wstring oldExe = currentExe + L".old";
 
-    // 1. Descargar archivo
-    HRESULT hr = URLDownloadToFileW(nullptr, downloadUrl.c_str(), newExe.c_str(), 0, nullptr);
-    if (FAILED(hr)) {
-        outError = L"Error al descargar la nueva versión.";
+    wchar_t tempPathBuf[MAX_PATH];
+    GetTempPathW(MAX_PATH, tempPathBuf);
+    std::wstring tempDir = tempPathBuf;
+
+    bool isZip = (downloadUrl.length() >= 4 && _wcsicmp(downloadUrl.c_str() + downloadUrl.length() - 4, L".zip") == 0);
+
+    if (isZip) {
+        std::wstring tempZip = tempDir + L"Lux_Portable_Update.zip";
+        std::wstring tempExtract = tempDir + L"Lux_Portable_Extract";
+
+        // 1. Descargar paquete ZIP portable
+        DeleteFileW(tempZip.c_str());
+        HRESULT hr = URLDownloadToFileW(nullptr, downloadUrl.c_str(), tempZip.c_str(), 0, nullptr);
+        if (FAILED(hr)) {
+            outError = L"Error al descargar la versión portable.";
+            DeleteFileW(tempZip.c_str());
+            return false;
+        }
+
+        // 2. Crear directorio de extracción y descomprimir con tar.exe nativo de Windows
+        CreateDirectoryW(tempExtract.c_str(), nullptr);
+        std::wstring cmd = L"tar.exe -xf \"" + tempZip + L"\" -C \"" + tempExtract + L"\"";
+        STARTUPINFOW si{ sizeof(si) };
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi{};
+        BOOL procOk = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+        if (procOk) {
+            WaitForSingleObject(pi.hProcess, 15000);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+
+        // 3. Localizar Lux.exe dentro de los archivos extraídos
+        std::wstring extractedExe = FindFileRecursive(tempExtract, L"Lux.exe");
+        if (extractedExe.empty()) {
+            outError = L"No se encontró el ejecutable en el paquete portable.";
+            DeleteFileW(tempZip.c_str());
+            return false;
+        }
+
+        // Copiar a .new
         DeleteFileW(newExe.c_str());
-        return false;
+        if (!CopyFileW(extractedExe.c_str(), newExe.c_str(), FALSE)) {
+            outError = L"No se pudo preparar el binario extraído.";
+            DeleteFileW(tempZip.c_str());
+            return false;
+        }
+
+        // Limpiar archivo temporal zip
+        DeleteFileW(tempZip.c_str());
+    } else {
+        // Descarga directa tradicional de ejecutable
+        HRESULT hr = URLDownloadToFileW(nullptr, downloadUrl.c_str(), newExe.c_str(), 0, nullptr);
+        if (FAILED(hr)) {
+            outError = L"Error al descargar la nueva versión.";
+            DeleteFileW(newExe.c_str());
+            return false;
+        }
     }
 
     // 2. Renombrar ejecutable actual a .old (Windows permite renombrar archivos en ejecución)

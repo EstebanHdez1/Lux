@@ -28,14 +28,19 @@ public:
     void TogglePanel();
 
     void OpenSettings();
+    void AdjustBrightnessStep(bool increase, int step = 5);
 
 private:
     LuxApp() = default;
     ~LuxApp() = default;
 
-    // Callbacks de ventana
+    // Callbacks de ventana y hooks
     static LRESULT CALLBACK MsgWndProc(HWND, UINT, WPARAM, LPARAM);
     static LRESULT CALLBACK PanelWndProc(HWND, UINT, WPARAM, LPARAM);
+    static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
+
+    void RegisterBrightnessHotkeys();
+    void UnregisterBrightnessHotkeys();
 
     LRESULT HandleMsgWnd(HWND, UINT, WPARAM, LPARAM);
     LRESULT HandlePanelWnd(HWND, UINT, WPARAM, LPARAM);
@@ -52,6 +57,8 @@ private:
     HINSTANCE m_hInst = nullptr;
     HWND m_hMsgWnd = nullptr;
     HWND m_hPanelWnd = nullptr;
+    HHOOK m_hKeyboardHook = nullptr;
+    ULONGLONG m_lastHotkeyTime = 0;
 
     // Módulos
     CWmiBrightness   m_wmi;

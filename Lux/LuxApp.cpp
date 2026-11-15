@@ -75,6 +75,8 @@ bool LuxApp::Init(HINSTANCE hInst) {
     RebuildThemeBrush();
     ApplyTheme();
 
+    RegisterBrightnessHotkeys();
+
     if (m_settings.GetShowTrayIcon()) {
         m_trayIcon.Create(m_hMsgWnd, SettingsManager::IsTaskbarLightTheme());
     }
@@ -84,6 +86,7 @@ bool LuxApp::Init(HINSTANCE hInst) {
 }
 
 void LuxApp::Shutdown() {
+    UnregisterBrightnessHotkeys();
     m_trayIcon.Remove();
     m_monitorMgr.Shutdown();
     m_wmi.Shutdown();
@@ -497,6 +500,114 @@ LRESULT CALLBACK LuxApp::PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     return Instance().HandlePanelWnd(hwnd, msg, wp, lp);
 }
 
+LRESULT CALLBACK LuxApp::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode == HC_ACTION && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)) {
+        auto* pKbd = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
+        if (pKbd) {
+            if (pKbd->vkCode == VK_BRIGHTNESS_UP) {
+                PostMessageW(Instance().m_hMsgWnd, WM_BRIGHTNESS_HOTKEY, 1, 0);
+            } else if (pKbd->vkCode == VK_BRIGHTNESS_DOWN) {
+                PostMessageW(Instance().m_hMsgWnd, WM_BRIGHTNESS_HOTKEY, 0, 0);
+            }
+        }
+    }
+    return CallNextHookEx(nullptr, nCode, wParam, lParam);
+}
+
+void LuxApp::RegisterBrightnessHotkeys() {
+    // 1. Hook global de bajo nivel de teclado (WH_KEYBOARD_LL) para interceptar VK_BRIGHTNESS_UP / DOWN
+    if (!m_hKeyboardHook) {
+        m_hKeyboardHook = SetWindowsHookExW(WH_KEYBOARD_LL, &LuxApp::LowLevelKeyboardProc, m_hInst, 0);
+    }
+
+    // 2. Registro de Raw Input para Consumer Controls (HID 0x0C, Usage 0x01) con RIDEV_INPUTSINK
+    RAWINPUTDEVICE rid[2]{};
+    rid[0].usUsagePage = 0x0C; // Consumer Page
+    rid[0].usUsage     = 0x01; // Consumer Control
+    rid[0].dwFlags     = RIDEV_INPUTSINK;
+    rid[0].hwndTarget  = m_hMsgWnd;
+
+    rid[1].usUsagePage = 0x01; // Generic Desktop
+    rid[1].usUsage     = 0x06; // Keyboard
+    rid[1].dwFlags     = RIDEV_INPUTSINK;
+    rid[1].hwndTarget  = m_hMsgWnd;
+
+    RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
+
+    // 3. HotKeys globales como fallback
+    RegisterHotKey(m_hMsgWnd, 3001, 0, VK_BRIGHTNESS_UP);
+    RegisterHotKey(m_hMsgWnd, 3002, 0, VK_BRIGHTNESS_DOWN);
+}
+
+void LuxApp::UnregisterBrightnessHotkeys() {
+    if (m_hKeyboardHook) {
+        UnhookWindowsHookEx(m_hKeyboardHook);
+        m_hKeyboardHook = nullptr;
+    }
+
+    UnregisterHotKey(m_hMsgWnd, 3001);
+    UnregisterHotKey(m_hMsgWnd, 3002);
+
+    RAWINPUTDEVICE rid[2]{};
+    rid[0].usUsagePage = 0x0C;
+    rid[0].usUsage     = 0x01;
+    rid[0].dwFlags     = RIDEV_REMOVE;
+    rid[0].hwndTarget  = nullptr;
+
+    rid[1].usUsagePage = 0x01;
+    rid[1].usUsage     = 0x06;
+    rid[1].dwFlags     = RIDEV_REMOVE;
+    rid[1].hwndTarget  = nullptr;
+
+    RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
+}
+
+void LuxApp::AdjustBrightnessStep(bool increase, int step) {
+    ULONGLONG now = GetTickCount64();
+    if (now - m_lastHotkeyTime < 40) {
+        return; // Debounce para evitar procesamiento duplicado inmediato
+    }
+    m_lastHotkeyTime = now;
+
+    if (m_monitorMgr.GetMonitorCount() == 0) return;
+
+    // Detectar monitor activo:
+    // 1. Prioridad: Monitor donde se encuentra el cursor del ratón
+    POINT pt{};
+    GetCursorPos(&pt);
+    HMONITOR hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL);
+
+    // 2. Si no es válido, monitor de la ventana en primer plano
+    if (!hMon) {
+        HWND hFg = GetForegroundWindow();
+        if (hFg) {
+            hMon = MonitorFromWindow(hFg, MONITOR_DEFAULTTONEAREST);
+        }
+    }
+
+    size_t targetIndex = 0;
+    const auto& monitors = m_monitorMgr.GetMonitors();
+    if (hMon) {
+        for (size_t i = 0; i < monitors.size(); ++i) {
+            if (monitors[i].hMonitor == hMon) {
+                targetIndex = i;
+                break;
+            }
+        }
+    }
+
+    int current = monitors[targetIndex].current;
+    int nextVal = increase ? (current + step) : (current - step);
+    nextVal = std::clamp(nextVal, 0, 100);
+
+    if (nextVal != current) {
+        m_monitorMgr.ApplyBrightness(targetIndex, nextVal);
+        if (m_hPanelWnd && IsWindowVisible(m_hPanelWnd)) {
+            InvalidateRect(m_hPanelWnd, nullptr, FALSE);
+        }
+    }
+}
+
 LRESULT LuxApp::HandleMsgWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == m_msgTaskbarCreated) {
         if (m_settings.GetShowTrayIcon()) {
@@ -505,6 +616,44 @@ LRESULT LuxApp::HandleMsgWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     switch (msg) {
+    case WM_HOTKEY: {
+        int id = static_cast<int>(wp);
+        if (id == 3001) AdjustBrightnessStep(true);
+        else if (id == 3002) AdjustBrightnessStep(false);
+        return 0;
+    }
+
+    case WM_BRIGHTNESS_HOTKEY: {
+        bool increase = (wp != 0);
+        AdjustBrightnessStep(increase);
+        return 0;
+    }
+
+    case WM_INPUT: {
+        UINT dwSize = 0;
+        GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT, nullptr, &dwSize, sizeof(RAWINPUTHEADER));
+        if (dwSize > 0) {
+            std::vector<BYTE> rawBuffer(dwSize);
+            if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT, rawBuffer.data(), &dwSize, sizeof(RAWINPUTHEADER)) == dwSize) {
+                RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(rawBuffer.data());
+                if (raw->header.dwType == RIM_TYPEHID) {
+                    BYTE* bRawData = raw->data.hid.bRawData;
+                    DWORD dataSize = raw->data.hid.dwSizeHid * raw->data.hid.dwCount;
+                    for (DWORD i = 0; i + 1 < dataSize; ++i) {
+                        WORD usage = bRawData[i] | (bRawData[i + 1] << 8);
+                        if (usage == 0x006F) {
+                            AdjustBrightnessStep(true);
+                            break;
+                        } else if (usage == 0x0070) {
+                            AdjustBrightnessStep(false);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    }
     case WM_TRAYICON:
         if (LOWORD(lp) == WM_LBUTTONUP) {
             TogglePanel();

@@ -89,9 +89,18 @@ constexpr int IDC_TOGGLE_TRAYICON     = 2002;
 constexpr int IDC_COMBO_THEME         = 2003;
 constexpr int IDC_BTN_UPDATE          = 2004;
 
+#ifndef VK_BRIGHTNESS_DOWN
+#define VK_BRIGHTNESS_DOWN 0xD9
+#endif
+#ifndef VK_BRIGHTNESS_UP
+#define VK_BRIGHTNESS_UP 0xD8
+#endif
+
+constexpr UINT WM_BRIGHTNESS_HOTKEY = WM_APP + 20;
+
 // Nombres de aplicación, versiones y clases de ventana
 inline const wchar_t* const APP_NAME          = L"Lux";
-inline const wchar_t* const APP_VERSION       = L"v1.0.1";
+inline const wchar_t* const APP_VERSION       = L"v1.0.2";
 inline const wchar_t* const GITHUB_API_LATEST = L"https://api.github.com/repos/EstebanHdez1/Lux/releases/latest";
 inline const wchar_t* const GITHUB_REPO_URL   = L"https://github.com/EstebanHdez1/Lux";
 inline const wchar_t* const MSGWND_CLASS      = L"Lux_MsgWnd";

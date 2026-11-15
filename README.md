@@ -31,28 +31,35 @@
   - Subclasificación oscura completa para menús nativos y controles desplegables (ComboBox).
   - Iconos vectoriales dibujados en tiempo de ejecución (icono del sol estilo Tabler en bandeja y controles).
 - **Consumo mínimo de memoria RAM**: Optimización automática mediante vaciado de páginas en espera (`PurgeWorkingSet`), consumiendo habitualmente menos de 3 MB de memoria en segundo plano.
-- **Ajustes rápidos**: Control de brillo mediante rueda del ratón (`MouseWheel`) o arrastre del deslizador.
+- **Soporte de Hotkeys de Brillo Nativas de Windows**: Captura de teclas multimedia estándar del teclado (`VK_BRIGHTNESS_UP` y `VK_BRIGHTNESS_DOWN`), compatible con teclados de portátiles y teclados externos que incorporen dichas teclas, ajustando automáticamente el monitor activo o bajo el puntero del ratón.
+- **Ajustes rápidos**: Control de brillo mediante rueda del ratón (`MouseWheel`), deslizadores interactivos o teclas de brillo.
 
 ---
 
-## 📦 Descargas y Releases
+## 📦 Descargas y Releases Portables
 
-Puedes descargar la versión ejecutable más reciente directamente desde la sección oficial de **[GitHub Releases](https://github.com/EstebanHdez1/Lux/releases)**.
+Puedes descargar la versión portable más reciente directamente desde la sección oficial de **[GitHub Releases](https://github.com/EstebanHdez1/Lux/releases)**.
 
-- **`Lux.exe`**: Binario 100% portable y autocontenido.
-- No requiere instalación ni runtimes externos.
+- **`Lux-vX.Y.Z-Windows-Portable.zip`**: Versión 100% portable y autocontenida empaquetada con su archivo explicativo.
+- **Actualizador integrado**: Detecta automáticamente nuevos paquetes portables en GitHub Releases y actualiza la aplicación conservando tus preferencias.
+- No requiere instalación ni runtimes externos (.NET, Electron, etc.).
 - Compatible con Windows 10 (2004+) y Windows 11.
 
 ---
 
 ## 📁 Estructura del Proyecto
 
-El código fuente de la aplicación está organizado en la carpeta `Lux/`:
+El proyecto está organizado con scripts de compilación y empaquetado portables automatizados:
 
 ```text
 ├── Lux.sln                 # Solución de Visual Studio 2022
-├── .gitignore              # Configuración de exclusión para Git y VS
+├── build.bat               # Compilador automático por lotes (Release x64)
+├── compilar.bat            # Acceso rápido a la compilación
+├── .gitignore              # Exclusiones de Git (builds, releases y temporales)
 ├── README.md               # Documentación principal del proyecto
+│
+├── scripts/
+│   └── package_portable.ps1 # Script de empaquetado de versiones portables (.zip)
 │
 └── Lux/                    # Código fuente de la aplicación
     ├── Lux.vcxproj         # Proyecto C++ de la aplicación (Win32 GUI)
@@ -63,7 +70,8 @@ El código fuente de la aplicación está organizado en la carpeta `Lux/`:
     ├── SettingsManager.h/.cpp # Gestión de .ini, autoinicio en registro y tema
     ├── TrayIcon.h / .cpp   # Icono vectorial procedural y menú contextual
     ├── SettingsWindow.h/.cpp # Ventana modal de ajustes y controles owner-draw
-    ├── LuxApp.h / .cpp     # Coordinador principal de la app y panel flotante
+    ├── LuxApp.h / .cpp     # Coordinador principal, hooks de teclado y panel flotante
+    ├── Updater.h / .cpp    # Actualizador integrado para versiones portables
     └── main.cpp            # Punto de entrada (wWinMain) y mutex de instancia única
 ```
 
@@ -96,16 +104,30 @@ La aplicación está dividida en clases desacopladas y de fácil lectura:
 
 ## 🔨 Compilación y Construcción
 
-### Opción 1: Visual Studio 2022 (Recomendado)
+### Opción 1: Compilación Automática (Recomendada)
+
+Ejecuta el script por lotes en la raíz del proyecto:
+
+```cmd
+build.bat
+```
+o alternativamente:
+```cmd
+compilar.bat
+```
+
+### Opción 2: Empaquetado de Versión Portable (.zip)
+
+Para generar el paquete portable distribuible (idéntico al formato de MultiChat):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package_portable.ps1
+```
+
+Generará el directorio `release/Lux-vX.Y.Z-Portable/` y el archivo `release/Lux-vX.Y.Z-Windows-Portable.zip` con su respectivo `LEEME.txt`.
+
+### Opción 3: Visual Studio 2022
 
 1. Abre el archivo `Lux.sln` en Visual Studio 2022.
 2. Selecciona la configuración **`Release`** y plataforma **`x64`**.
 3. Presiona `Ctrl + Shift + B` (o menú *Compilar > Compilar solución*).
-
-### Opción 2: MSBuild (Línea de Comandos)
-
-Desde una consola de comandos para desarrolladores de Visual Studio:
-
-```bat
-MSBuild Lux.sln /p:Configuration=Release /p:Platform=x64
-```
