@@ -25,6 +25,99 @@ void MonitorManager::Shutdown() {
     FreeMonitors();
 }
 
+bool MonitorManager::SetGammaBrightness(const std::wstring& deviceName, int value) {
+    if (deviceName.empty()) return false;
+    HDC hdc = CreateDCW(deviceName.c_str(), nullptr, nullptr, nullptr);
+    if (!hdc) return false;
+
+    value = std::clamp(value, 0, 100);
+    // Factor de atenuación: valor 0 -> 4% (para mantener visible el cursor), valor 100 -> 100%
+    float factor = static_cast<float>(value) / 100.0f;
+    factor = std::clamp(factor, 0.04f, 1.0f);
+
+    WORD ramp[3][256];
+    for (int i = 0; i < 256; ++i) {
+        float raw = static_cast<float>(i * 257) * factor;
+        DWORD v = static_cast<DWORD>(std::round(raw));
+        if (v > 65535) v = 65535;
+        ramp[0][i] = static_cast<WORD>(v);
+        ramp[1][i] = static_cast<WORD>(v);
+        ramp[2][i] = static_cast<WORD>(v);
+    }
+
+    BOOL ok = SetDeviceGammaRamp(hdc, ramp);
+    DeleteDC(hdc);
+    return (ok != FALSE);
+}
+
+void MonitorManager::RestoreGamma(const std::wstring& deviceName) {
+    if (deviceName.empty()) return;
+    HDC hdc = CreateDCW(deviceName.c_str(), nullptr, nullptr, nullptr);
+    if (!hdc) return;
+
+    WORD ramp[3][256];
+    for (int i = 0; i < 256; ++i) {
+        WORD v = static_cast<WORD>(i * 257);
+        ramp[0][i] = v;
+        ramp[1][i] = v;
+        ramp[2][i] = v;
+    }
+    SetDeviceGammaRamp(hdc, ramp);
+    DeleteDC(hdc);
+}
+
+HWND MonitorManager::CreateOverlayWindow(const RECT& rc) {
+    static bool s_reg = false;
+    const wchar_t* const CLS_NAME = L"Lux_DimmingOverlay";
+    HINSTANCE hInst = GetModuleHandleW(nullptr);
+
+    if (!s_reg) {
+        WNDCLASSEXW wc{ sizeof(wc) };
+        wc.lpfnWndProc = DefWindowProcW;
+        wc.hInstance = hInst;
+        wc.lpszClassName = CLS_NAME;
+        wc.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        RegisterClassExW(&wc);
+        s_reg = true;
+    }
+
+    int w = rc.right - rc.left;
+    int h = rc.bottom - rc.top;
+
+    HWND hwnd = CreateWindowExW(
+        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+        CLS_NAME, L"", WS_POPUP,
+        rc.left, rc.top, w, h,
+        nullptr, nullptr, hInst, nullptr
+    );
+
+    if (hwnd) {
+        SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA);
+    }
+    return hwnd;
+}
+
+void MonitorManager::SetOverlayAlpha(HWND hwnd, int brightness) {
+    if (!hwnd || !IsWindow(hwnd)) return;
+    brightness = std::clamp(brightness, 0, 100);
+    if (brightness >= 100) {
+        ShowWindow(hwnd, SW_HIDE);
+    } else {
+        int alpha = static_cast<int>((100 - brightness) * 2.2f);
+        alpha = std::clamp(alpha, 0, 220);
+        SetLayeredWindowAttributes(hwnd, 0, static_cast<BYTE>(alpha), LWA_ALPHA);
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
+}
+
+void MonitorManager::DestroyOverlayWindow(HWND& hwnd) {
+    if (hwnd && IsWindow(hwnd)) {
+        DestroyWindow(hwnd);
+        hwnd = nullptr;
+    }
+}
+
 std::wstring MonitorManager::GetEDIDMonitorName(HMONITOR hMonitor) {
     MONITORINFOEXW mi{}; mi.cbSize = sizeof(mi);
     if (!GetMonitorInfoW(hMonitor, &mi)) return L"";
@@ -78,6 +171,11 @@ void MonitorManager::FreeMonitors() {
     for (auto& m : m_monitors) {
         if (m.backend == BrightnessBackend::DDC && m.hPhysical) {
             DestroyPhysicalMonitor(m.hPhysical);
+            m.hPhysical = nullptr;
+        } else if (m.backend == BrightnessBackend::Gamma) {
+            RestoreGamma(m.deviceName);
+        } else if (m.backend == BrightnessBackend::SoftwareOverlay && m.hOverlay) {
+            DestroyOverlayWindow(m.hOverlay);
         }
     }
     m_monitors.clear();
@@ -102,9 +200,20 @@ void MonitorManager::RefreshMonitors() {
         MONITORINFOEXW mi{}; mi.cbSize = sizeof(mi);
         GetMonitorInfoW(hm, &mi);
         entry.rect = mi.rcMonitor;
+        entry.deviceName = mi.szDevice;
 
         std::wstring edidName = GetEDIDMonitorName(hm);
+        if (edidName.empty()) {
+            DISPLAY_DEVICEW ddMon{}; ddMon.cb = sizeof(ddMon);
+            if (EnumDisplayDevicesW(mi.szDevice, 0, &ddMon, 0) && ddMon.DeviceString[0] != L'\0') {
+                std::wstring devStr = ddMon.DeviceString;
+                if (devStr != L"Default Monitor") {
+                    edidName = devStr;
+                }
+            }
+        }
 
+        // 1. DDC/CI Hardware (monitores externos con DisplayPort / HDMI compatible)
         DWORD numPhys = 0;
         if (GetNumberOfPhysicalMonitorsFromHMONITOR(hm, &numPhys) && numPhys > 0) {
             std::vector<PHYSICAL_MONITOR> pms(numPhys);
@@ -125,6 +234,7 @@ void MonitorManager::RefreshMonitors() {
             }
         }
 
+        // 2. WMI (pantallas integradas de computadoras portatiles)
         if (entry.backend == BrightnessBackend::Unsupported && !wmiList.empty()) {
             std::wstring matched;
             if (!edidName.empty()) {
@@ -142,6 +252,30 @@ void MonitorManager::RefreshMonitors() {
                     if (kv.first == matched) { entry.current = kv.second; break; }
                 }
             }
+        }
+
+        // 3. GPU Gamma Ramp (Televisores HDMI, Proyectores y Monitores sin DDC/CI)
+        if (entry.backend == BrightnessBackend::Unsupported) {
+            HDC hdcTest = CreateDCW(entry.deviceName.c_str(), nullptr, nullptr, nullptr);
+            if (hdcTest) {
+                WORD testRamp[3][256];
+                if (GetDeviceGammaRamp(hdcTest, testRamp)) {
+                    entry.backend = BrightnessBackend::Gamma;
+                    entry.minVal  = 0;
+                    entry.maxVal  = 100;
+                    entry.current = 100;
+                }
+                DeleteDC(hdcTest);
+            }
+        }
+
+        // 4. Software Dimming Overlay (Fallback universal para pantallas virtuales / DisplayLink)
+        if (entry.backend == BrightnessBackend::Unsupported) {
+            entry.backend = BrightnessBackend::SoftwareOverlay;
+            entry.minVal  = 0;
+            entry.maxVal  = 100;
+            entry.current = 100;
+            entry.hOverlay = CreateOverlayWindow(entry.rect);
         }
 
         if (!edidName.empty()) {
@@ -191,24 +325,41 @@ void MonitorManager::HardwareWorkerThread() {
         for (const auto& [idx, val] : targets) {
             HANDLE hPhys = nullptr;
             std::wstring wmiInst;
+            std::wstring devName;
             BrightnessBackend backend = BrightnessBackend::Unsupported;
             int maxVal = 100;
+            HWND hOverlay = nullptr;
+            RECT rc{};
 
             if (idx < m_monitors.size()) {
                 backend = m_monitors[idx].backend;
                 hPhys = m_monitors[idx].hPhysical;
                 wmiInst = m_monitors[idx].wmiInstance;
+                devName = m_monitors[idx].deviceName;
                 maxVal = m_monitors[idx].maxVal;
+                hOverlay = m_monitors[idx].hOverlay;
+                rc = m_monitors[idx].rect;
             }
 
             if (backend == BrightnessBackend::DDC && hPhys) {
                 DWORD hwValue = static_cast<DWORD>((static_cast<long long>(val) * maxVal) / 100);
-                SetVCPFeature(hPhys, 0x10, hwValue);
+                if (!SetVCPFeature(hPhys, 0x10, hwValue)) {
+                    // Fallback dinámico a Gamma si la televisión/adaptador no procesa el código VCP
+                    SetGammaBrightness(devName, val);
+                }
             } else if (backend == BrightnessBackend::WMI && !wmiInst.empty() && m_pWmi) {
                 m_pWmi->SetBrightness(wmiInst, val);
+            } else if (backend == BrightnessBackend::Gamma && !devName.empty()) {
+                SetGammaBrightness(devName, val);
+            } else if (backend == BrightnessBackend::SoftwareOverlay) {
+                if (!hOverlay) {
+                    m_monitors[idx].hOverlay = CreateOverlayWindow(rc);
+                    hOverlay = m_monitors[idx].hOverlay;
+                }
+                SetOverlayAlpha(hOverlay, val);
             }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     }
 

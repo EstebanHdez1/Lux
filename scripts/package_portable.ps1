@@ -1,6 +1,6 @@
 ﻿param(
-    [string]$OutputDir = "release\Lux-v1.0.2-Portable",
-    [string]$ZipName = "release\Lux-v1.0.2-Windows-Portable.zip",
+    [string]$OutputDir = "",
+    [string]$ZipName = "",
     [switch]$SkipBuild
 )
 
@@ -13,7 +13,23 @@ if ($ProjectRoot) {
     Set-Location $ProjectRoot
 }
 
-Write-Host "==> Preparando empaquetado portable de Lux..." -ForegroundColor Cyan
+# Obtener version dinamica desde Common.h
+$version = "v1.0.3"
+if (Test-Path "Lux\Common.h") {
+    $match = Select-String -Path "Lux\Common.h" -Pattern 'APP_VERSION\s*=\s*L"([^"]+)"'
+    if ($match -and $match.Matches.Groups.Count -gt 1) {
+        $version = $match.Matches.Groups[1].Value
+    }
+}
+
+if (-not $OutputDir) {
+    $OutputDir = "release\Lux-$version-Portable"
+}
+if (-not $ZipName) {
+    $ZipName = "release\Lux-$version-Windows-Portable.zip"
+}
+
+Write-Host "==> Preparando empaquetado portable de Lux ($version)..." -ForegroundColor Cyan
 
 # 1. Compilar versión final si no se omitió
 if (-not $SkipBuild) {
@@ -45,16 +61,18 @@ Copy-Item $sourceExe -Destination "$OutputDir\Lux.exe"
 # 5. Crear archivo LEEME en el directorio portable
 $readmeContent = @"
 =====================================================
-Lux - Control Nativo de Brillo de Pantalla (Versión Portable)
+Lux - Control Universal de Brillo de Pantalla (Versión Portable)
 =====================================================
 
-Esta es la versión portable de Lux.
+Esta es la versión portable de Lux $version.
 No requiere instalación ni componentes adicionales (.NET, Electron, etc.).
 Solo haz doble clic en Lux.exe para iniciar.
 
-Características:
-- Control de brillo para monitores externos por hardware (DDC/CI vía HDMI/DisplayPort).
-- Control de brillo para pantallas internas de laptops (WMI / WmiMonitorBrightness).
+Compatibilidad Universal de Pantallas:
+- Monitores de PC externos vía DDC/CI (DisplayPort / HDMI).
+- Pantallas integradas de laptops vía WMI (WmiMonitorBrightness).
+- Televisores (Samsung, LG, Sony, TCL, etc.) y proyectores HDMI mediante Gamma Ramp por GPU.
+- Monitores DisplayLink, USB o virtuales mediante atenuación por Software Dimming Overlay transparente.
 - Soporte para Hotkeys multimedia estándar de brillo de Windows (VK_BRIGHTNESS_UP / DOWN),
   compatible con teclados de laptops y teclados externos que cuenten con estas teclas.
 - Panel flotante moderno con diseño Windows 11 Fluent y esquinas redondeadas nativas.

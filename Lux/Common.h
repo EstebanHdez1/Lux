@@ -100,7 +100,7 @@ constexpr UINT WM_BRIGHTNESS_HOTKEY = WM_APP + 20;
 
 // Nombres de aplicación, versiones y clases de ventana
 inline const wchar_t* const APP_NAME          = L"Lux";
-inline const wchar_t* const APP_VERSION       = L"v1.0.2";
+inline const wchar_t* const APP_VERSION       = L"v1.0.3";
 inline const wchar_t* const GITHUB_API_LATEST = L"https://api.github.com/repos/EstebanHdez1/Lux/releases/latest";
 inline const wchar_t* const GITHUB_REPO_URL   = L"https://github.com/EstebanHdez1/Lux";
 inline const wchar_t* const MSGWND_CLASS      = L"Lux_MsgWnd";
@@ -114,17 +114,20 @@ enum class ThemeMode {
     Auto  = 2
 };
 
-// Backends de control de brillo
+// Backends de control de brillo (Hardware, GPU Driver y Software Dimming)
 enum class BrightnessBackend {
     Unsupported,
     DDC,
-    WMI
+    WMI,
+    Gamma,
+    SoftwareOverlay
 };
 
 // Entrada representativa de un monitor
 struct MonitorEntry {
     HMONITOR hMonitor = nullptr;
     HANDLE   hPhysical = nullptr;
+    std::wstring deviceName; // ej. \\.\DISPLAY1
     std::wstring wmiInstance;
     std::wstring name;
     RECT rect{};
@@ -132,4 +135,5 @@ struct MonitorEntry {
     int current = 100;
     int minVal  = 0;
     int maxVal  = 100;
+    HWND hOverlay = nullptr;
 };

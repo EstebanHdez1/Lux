@@ -24,6 +24,15 @@ public:
 
     static std::wstring GetEDIDMonitorName(HMONITOR hMonitor);
 
+    // Métodos de control Gamma por GPU (para TVs HDMI, proyectores y monitores sin DDC/CI)
+    static bool SetGammaBrightness(const std::wstring& deviceName, int value);
+    static void RestoreGamma(const std::wstring& deviceName);
+
+    // Métodos de Software Dimming Overlay (fallback universal)
+    static HWND CreateOverlayWindow(const RECT& rc);
+    static void SetOverlayAlpha(HWND hwnd, int brightness);
+    static void DestroyOverlayWindow(HWND& hwnd);
+
 private:
     static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC, LPRECT, LPARAM lp);
     void HardwareWorkerThread();

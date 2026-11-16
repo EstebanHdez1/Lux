@@ -21,9 +21,12 @@
 ## ✨ Características Principales
 
 - **Cero frameworks pesados**: Desarrollado en **C++17 puro con Win32 y GDI+**. Sin Electron, sin .NET, sin dependencias externas complejas.
-- **Doble backend de brillo**:
+- **Cuádruple backend universal de brillo**:
   - **DDC/CI**: Control de brillo por hardware para monitores externos conectados por DisplayPort / HDMI mediante llamadas nativas VCP (código `0x10`).
-  - **WMI (`root\WMI`)**: Control para pantallas integradas en computadoras portátiles (`WmiMonitorBrightness`).
+  - **WMI (`root\WMI`)**: Control nativo para pantallas integradas en computadoras portátiles (`WmiMonitorBrightness`).
+  - **GPU Gamma Ramp (`SetDeviceGammaRamp`)**: Control directo por controlador gráfico (NVIDIA, AMD, Intel) para **Televisores (Samsung, LG, Sony, TCL, etc.)**, proyectores y monitores donde DDC/CI no está disponible o viene deshabilitado por HDMI.
+  - **Software Dimming Overlay**: Fallback de atenuación transparente (`WS_EX_TRANSPARENT`) para pantallas virtuales, adaptadores DisplayLink USB y entornos sin soporte de hardware.
+- **Detección y fallback automático en caliente**: Si una pantalla o televisión reporta soporte pero falla al procesar comandos VCP, Lux conmuta al instante al control Gamma sin interrumpir la experiencia.
 - **Respuesta instantánea (Cero Delay)**: Hilo de comunicación de hardware en segundo plano con colas no bloqueantes.
 - **Diseño Windows 11 Fluent**:
   - Esquinas redondeadas nativas mediante API DWM (`DWMWA_WINDOW_CORNER_PREFERENCE`).
