@@ -8,16 +8,24 @@ echo.
 
 cd /d "%~dp0"
 
+:: Si el compilador ya esta en el PATH (ej. GitHub Actions o Developer Command Prompt), compilar directo
+where cl.exe >nul 2>&1
+if %errorlevel% equ 0 (
+    echo Entorno MSVC detectado en PATH.
+    goto :compile
+)
+
 set "VCVARS="
-if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+if not defined VCVARS if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 if not defined VCVARS if exist "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat"
-if not defined VCVARS if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
 
 if not defined VCVARS goto :no_tools
 
 echo [1/2] Configurando entorno MSVC x64...
 call "%VCVARS%" >nul 2>&1
 
+:compile
 if not exist "x64\Release\obj" mkdir "x64\Release\obj"
 
 echo [2/2] Compilando recursos y codigo fuente de Lux...
