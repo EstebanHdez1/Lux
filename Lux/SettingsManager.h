@@ -17,6 +17,10 @@ public:
     ThemeMode GetThemeMode() const { return m_themeMode; }
     void SetThemeMode(ThemeMode mode);
 
+    // Persistencia de brillo por monitor (para TVs, monitores Gamma y externos)
+    int GetMonitorBrightness(const std::wstring& monitorKey, int defaultVal = 100);
+    void SetMonitorBrightness(const std::wstring& monitorKey, int value);
+
     bool IsDarkEffective() const;
     static bool IsSystemDarkMode();
     static bool IsTaskbarLightTheme();

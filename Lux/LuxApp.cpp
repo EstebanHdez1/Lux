@@ -27,7 +27,7 @@ bool LuxApp::Init(HINSTANCE hInst) {
 
     LuxUtils::InitDarkModeAPIs();
     m_wmi.Init();
-    m_monitorMgr.Init(&m_wmi);
+    m_monitorMgr.Init(&m_wmi, &m_settings);
 
     m_darkMode = m_settings.IsDarkEffective();
     LuxUtils::SetPreferredThemeMode(m_darkMode);
@@ -449,7 +449,9 @@ void LuxApp::PaintPanel(HDC hdcOut, const RECT& rc) {
 }
 
 void LuxApp::ShowPanel() {
-    m_monitorMgr.RefreshMonitors();
+    if (m_monitorMgr.GetMonitorCount() == 0) {
+        m_monitorMgr.RefreshMonitors();
+    }
     PositionPanelNearTray();
 
     BOOL dark = m_darkMode ? TRUE : FALSE;

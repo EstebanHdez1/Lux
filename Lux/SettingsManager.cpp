@@ -82,6 +82,20 @@ void SettingsManager::SetThemeMode(ThemeMode mode) {
     m_themeMode = mode;
 }
 
+int SettingsManager::GetMonitorBrightness(const std::wstring& monitorKey, int defaultVal) {
+    if (monitorKey.empty()) return defaultVal;
+    std::wstring ini = LuxUtils::GetIniPath();
+    return GetPrivateProfileIntW(L"Brightness", monitorKey.c_str(), defaultVal, ini.c_str());
+}
+
+void SettingsManager::SetMonitorBrightness(const std::wstring& monitorKey, int value) {
+    if (monitorKey.empty()) return;
+    std::wstring ini = LuxUtils::GetIniPath();
+    wchar_t buf[16];
+    swprintf_s(buf, L"%d", value);
+    WritePrivateProfileStringW(L"Brightness", monitorKey.c_str(), buf, ini.c_str());
+}
+
 void SettingsManager::LoadSettings() {
     std::wstring ini = LuxUtils::GetIniPath();
     m_autoStart    = GetPrivateProfileIntW(L"General", L"AutoStart", 0, ini.c_str()) != 0;

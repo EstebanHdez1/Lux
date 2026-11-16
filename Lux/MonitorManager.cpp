@@ -1,4 +1,5 @@
 #include "MonitorManager.h"
+#include "SettingsManager.h"
 
 MonitorManager::MonitorManager() = default;
 
@@ -6,8 +7,9 @@ MonitorManager::~MonitorManager() {
     Shutdown();
 }
 
-bool MonitorManager::Init(CWmiBrightness* pWmi) {
+bool MonitorManager::Init(CWmiBrightness* pWmi, SettingsManager* pSettings) {
     m_pWmi = pWmi;
+    m_pSettings = pSettings;
     RefreshMonitors();
 
     // Hilo de comunicación con el hardware en segundo plano
@@ -21,6 +23,15 @@ void MonitorManager::Shutdown() {
     m_hwCv.notify_all();
     if (m_hwThread.joinable()) {
         m_hwThread.join();
+    }
+
+    // Restaurar rampa Gamma y destruir ventanas de overlay UNICAMENTE al cerrar la aplicación
+    for (auto& m : m_monitors) {
+        if (m.backend == BrightnessBackend::Gamma) {
+            RestoreGamma(m.deviceName);
+        } else if (m.backend == BrightnessBackend::SoftwareOverlay && m.hOverlay) {
+            DestroyOverlayWindow(m.hOverlay);
+        }
     }
     FreeMonitors();
 }
@@ -172,16 +183,20 @@ void MonitorManager::FreeMonitors() {
         if (m.backend == BrightnessBackend::DDC && m.hPhysical) {
             DestroyPhysicalMonitor(m.hPhysical);
             m.hPhysical = nullptr;
-        } else if (m.backend == BrightnessBackend::Gamma) {
-            RestoreGamma(m.deviceName);
-        } else if (m.backend == BrightnessBackend::SoftwareOverlay && m.hOverlay) {
-            DestroyOverlayWindow(m.hOverlay);
         }
+        // NOTA: No restaurar Gamma ni destruir overlays durante un simple refresco,
+        // para que la televisión o monitor mantenga su brillo configurado.
     }
     m_monitors.clear();
 }
 
 void MonitorManager::RefreshMonitors() {
+    // 1. Guardar en memoria el brillo actual antes de limpiar la lista
+    for (const auto& m : m_monitors) {
+        if (!m.deviceName.empty()) m_savedBrightness[m.deviceName] = m.current;
+        if (!m.name.empty()) m_savedBrightness[m.name] = m.current;
+    }
+
     FreeMonitors();
 
     std::vector<HMONITOR> hmons;
@@ -213,6 +228,28 @@ void MonitorManager::RefreshMonitors() {
             }
         }
 
+        if (!edidName.empty()) {
+            entry.name = edidName;
+        } else {
+            wchar_t buf[64];
+            swprintf_s(buf, L"Pantalla %d", idx + 1);
+            entry.name = buf;
+        }
+
+        // Obtener el valor de brillo previo guardado si existe (en memoria o en Lux.ini)
+        int savedValue = 100;
+        if (m_savedBrightness.find(entry.deviceName) != m_savedBrightness.end()) {
+            savedValue = m_savedBrightness[entry.deviceName];
+        } else if (m_savedBrightness.find(entry.name) != m_savedBrightness.end()) {
+            savedValue = m_savedBrightness[entry.name];
+        } else if (m_pSettings) {
+            savedValue = m_pSettings->GetMonitorBrightness(entry.name, 100);
+            if (savedValue == 100 && !entry.deviceName.empty()) {
+                savedValue = m_pSettings->GetMonitorBrightness(entry.deviceName, 100);
+            }
+        }
+        savedValue = std::clamp(savedValue, 0, 100);
+
         // 1. DDC/CI Hardware (monitores externos con DisplayPort / HDMI compatible)
         DWORD numPhys = 0;
         if (GetNumberOfPhysicalMonitorsFromHMONITOR(hm, &numPhys) && numPhys > 0) {
@@ -237,9 +274,9 @@ void MonitorManager::RefreshMonitors() {
         // 2. WMI (pantallas integradas de computadoras portatiles)
         if (entry.backend == BrightnessBackend::Unsupported && !wmiList.empty()) {
             std::wstring matched;
-            if (!edidName.empty()) {
+            if (!entry.name.empty()) {
                 for (auto& kv : wmiList) {
-                    if (kv.first.find(edidName) != std::wstring::npos) { matched = kv.first; break; }
+                    if (kv.first.find(entry.name) != std::wstring::npos) { matched = kv.first; break; }
                 }
             }
             if (matched.empty() && wmiList.size() == 1) matched = wmiList[0].first;
@@ -263,7 +300,8 @@ void MonitorManager::RefreshMonitors() {
                     entry.backend = BrightnessBackend::Gamma;
                     entry.minVal  = 0;
                     entry.maxVal  = 100;
-                    entry.current = 100;
+                    entry.current = savedValue; // Conservar brillo del televisor
+                    SetGammaBrightness(entry.deviceName, entry.current);
                 }
                 DeleteDC(hdcTest);
             }
@@ -274,16 +312,9 @@ void MonitorManager::RefreshMonitors() {
             entry.backend = BrightnessBackend::SoftwareOverlay;
             entry.minVal  = 0;
             entry.maxVal  = 100;
-            entry.current = 100;
+            entry.current = savedValue; // Conservar brillo del televisor
             entry.hOverlay = CreateOverlayWindow(entry.rect);
-        }
-
-        if (!edidName.empty()) {
-            entry.name = edidName;
-        } else {
-            wchar_t buf[64];
-            swprintf_s(buf, L"Pantalla %d", idx + 1);
-            entry.name = buf;
+            SetOverlayAlpha(entry.hOverlay, entry.current);
         }
 
         m_monitors.push_back(entry);
@@ -297,6 +328,17 @@ void MonitorManager::ApplyBrightness(size_t index, int value) {
 
     // Actualización inmediata en memoria para respuesta gráfica instantánea
     m_monitors[index].current = value;
+
+    // Persistir valor en memoria y archivo .ini
+    if (!m_monitors[index].deviceName.empty()) {
+        m_savedBrightness[m_monitors[index].deviceName] = value;
+    }
+    if (!m_monitors[index].name.empty()) {
+        m_savedBrightness[m_monitors[index].name] = value;
+        if (m_pSettings) {
+            m_pSettings->SetMonitorBrightness(m_monitors[index].name, value);
+        }
+    }
 
     // Encolar al hilo de hardware
     {
