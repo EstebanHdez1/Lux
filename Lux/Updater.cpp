@@ -189,6 +189,15 @@ bool Updater::ApplyUpdate(const std::wstring& downloadUrl, std::wstring& outErro
         return false;
     }
 
+    bool isZip = (downloadUrl.length() >= 4 && _wcsicmp(downloadUrl.c_str() + downloadUrl.length() - 4, L".zip") == 0);
+    bool isExe = (downloadUrl.length() >= 4 && _wcsicmp(downloadUrl.c_str() + downloadUrl.length() - 4, L".exe") == 0);
+
+    if (!isZip && !isExe) {
+        ShellExecuteW(nullptr, L"open", downloadUrl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        outError = L"Se abrió la página oficial de descargas en tu navegador.";
+        return false;
+    }
+
     std::wstring currentExe = LuxUtils::GetExePath();
     std::wstring newExe = currentExe + L".new";
     std::wstring oldExe = currentExe + L".old";
@@ -196,8 +205,6 @@ bool Updater::ApplyUpdate(const std::wstring& downloadUrl, std::wstring& outErro
     wchar_t tempPathBuf[MAX_PATH];
     GetTempPathW(MAX_PATH, tempPathBuf);
     std::wstring tempDir = tempPathBuf;
-
-    bool isZip = (downloadUrl.length() >= 4 && _wcsicmp(downloadUrl.c_str() + downloadUrl.length() - 4, L".zip") == 0);
 
     if (isZip) {
         std::wstring tempZip = tempDir + L"Lux_Portable_Update.zip";
