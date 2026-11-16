@@ -449,9 +449,7 @@ void LuxApp::PaintPanel(HDC hdcOut, const RECT& rc) {
 }
 
 void LuxApp::ShowPanel() {
-    if (m_monitorMgr.GetMonitorCount() == 0) {
-        m_monitorMgr.RefreshMonitors();
-    }
+    m_monitorMgr.RefreshMonitors();
     PositionPanelNearTray();
 
     BOOL dark = m_darkMode ? TRUE : FALSE;

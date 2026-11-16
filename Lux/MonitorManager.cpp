@@ -258,7 +258,12 @@ void MonitorManager::RefreshMonitors() {
                 HANDLE hFirst = pms[0].hPhysicalMonitor;
                 MC_VCP_CODE_TYPE vt;
                 DWORD cur = 0, maxv = 100;
-                if (GetVCPFeatureAndVCPFeatureReply(hFirst, 0x10, &vt, &cur, &maxv)) {
+                bool vcpOk = GetVCPFeatureAndVCPFeatureReply(hFirst, 0x10, &vt, &cur, &maxv) != FALSE;
+                if (!vcpOk) {
+                    Sleep(25);
+                    vcpOk = GetVCPFeatureAndVCPFeatureReply(hFirst, 0x10, &vt, &cur, &maxv) != FALSE;
+                }
+                if (vcpOk) {
                     entry.backend   = BrightnessBackend::DDC;
                     entry.hPhysical = hFirst;
                     entry.current   = static_cast<int>(maxv > 0 ? (cur * 100) / maxv : cur);
@@ -329,15 +334,12 @@ void MonitorManager::ApplyBrightness(size_t index, int value) {
     // Actualización inmediata en memoria para respuesta gráfica instantánea
     m_monitors[index].current = value;
 
-    // Persistir valor en memoria y archivo .ini
+    // Persistir valor en caché de memoria
     if (!m_monitors[index].deviceName.empty()) {
         m_savedBrightness[m_monitors[index].deviceName] = value;
     }
     if (!m_monitors[index].name.empty()) {
         m_savedBrightness[m_monitors[index].name] = value;
-        if (m_pSettings) {
-            m_pSettings->SetMonitorBrightness(m_monitors[index].name, value);
-        }
     }
 
     // Encolar al hilo de hardware
@@ -366,8 +368,10 @@ void MonitorManager::HardwareWorkerThread() {
 
         for (const auto& [idx, val] : targets) {
             HANDLE hPhys = nullptr;
+            HMONITOR hMon = nullptr;
             std::wstring wmiInst;
             std::wstring devName;
+            std::wstring monName;
             BrightnessBackend backend = BrightnessBackend::Unsupported;
             int maxVal = 100;
             HWND hOverlay = nullptr;
@@ -376,8 +380,10 @@ void MonitorManager::HardwareWorkerThread() {
             if (idx < m_monitors.size()) {
                 backend = m_monitors[idx].backend;
                 hPhys = m_monitors[idx].hPhysical;
+                hMon = m_monitors[idx].hMonitor;
                 wmiInst = m_monitors[idx].wmiInstance;
                 devName = m_monitors[idx].deviceName;
+                monName = m_monitors[idx].name;
                 maxVal = m_monitors[idx].maxVal;
                 hOverlay = m_monitors[idx].hOverlay;
                 rc = m_monitors[idx].rect;
@@ -386,8 +392,27 @@ void MonitorManager::HardwareWorkerThread() {
             if (backend == BrightnessBackend::DDC && hPhys) {
                 DWORD hwValue = static_cast<DWORD>((static_cast<long long>(val) * maxVal) / 100);
                 if (!SetVCPFeature(hPhys, 0x10, hwValue)) {
-                    // Fallback dinámico a Gamma si la televisión/adaptador no procesa el código VCP
-                    SetGammaBrightness(devName, val);
+                    // Si el handle expiró (modo reposo, suspensión o reconnect), re-adquirir handle físico y reintentar
+                    DWORD numPhys = 0;
+                    bool recovered = false;
+                    if (hMon && GetNumberOfPhysicalMonitorsFromHMONITOR(hMon, &numPhys) && numPhys > 0) {
+                        std::vector<PHYSICAL_MONITOR> pms(numPhys);
+                        if (GetPhysicalMonitorsFromHMONITOR(hMon, numPhys, pms.data())) {
+                            if (idx < m_monitors.size() && m_monitors[idx].hPhysical) {
+                                DestroyPhysicalMonitor(m_monitors[idx].hPhysical);
+                                m_monitors[idx].hPhysical = pms[0].hPhysicalMonitor;
+                            }
+                            hPhys = pms[0].hPhysicalMonitor;
+                            for (DWORD k = 1; k < numPhys; ++k) DestroyPhysicalMonitor(pms[k].hPhysicalMonitor);
+                            if (SetVCPFeature(hPhys, 0x10, hwValue)) {
+                                recovered = true;
+                            }
+                        }
+                    }
+                    if (!recovered) {
+                        // Fallback dinámico a Gamma si la pantalla no responde por DDC
+                        SetGammaBrightness(devName, val);
+                    }
                 }
             } else if (backend == BrightnessBackend::WMI && !wmiInst.empty() && m_pWmi) {
                 m_pWmi->SetBrightness(wmiInst, val);
@@ -399,6 +424,16 @@ void MonitorManager::HardwareWorkerThread() {
                     hOverlay = m_monitors[idx].hOverlay;
                 }
                 SetOverlayAlpha(hOverlay, val);
+            }
+
+            // Persistir de forma asíncrona en archivo .ini en segundo plano (sin congelar la UI)
+            if (m_pSettings) {
+                if (!monName.empty()) {
+                    m_pSettings->SetMonitorBrightness(monName, val);
+                }
+                if (!devName.empty()) {
+                    m_pSettings->SetMonitorBrightness(devName, val);
+                }
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
