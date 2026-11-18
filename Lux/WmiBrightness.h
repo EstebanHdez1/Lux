@@ -13,6 +13,8 @@ public:
     bool SetBrightness(const std::wstring& instanceName, int value);
 
 private:
+    bool InitInternal();
+
     std::mutex     m_wmiMutex;
     IWbemLocator*  m_pLoc = nullptr;
     IWbemServices* m_pSvc = nullptr;

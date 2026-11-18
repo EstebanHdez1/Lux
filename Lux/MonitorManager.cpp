@@ -7,18 +7,37 @@ MonitorManager::~MonitorManager() {
     Shutdown();
 }
 
-bool MonitorManager::Init(CWmiBrightness* pWmi, SettingsManager* pSettings) {
+void MonitorManager::WaitForInitialRefresh() {
+    if (m_initThread.joinable()) {
+        m_initThread.join();
+    }
+}
+
+bool MonitorManager::Init(CWmiBrightness* pWmi, SettingsManager* pSettings, bool asyncInitialRefresh) {
     m_pWmi = pWmi;
     m_pSettings = pSettings;
-    RefreshMonitors();
 
     // Hilo de comunicación con el hardware en segundo plano
     m_hwRunning = true;
     m_hwThread = std::thread(&MonitorManager::HardwareWorkerThread, this);
+
+    if (asyncInitialRefresh) {
+        m_initialRefreshDone = false;
+        m_initThread = std::thread([this]() {
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+            RefreshMonitors();
+            m_initialRefreshDone = true;
+        });
+    } else {
+        RefreshMonitors();
+        m_initialRefreshDone = true;
+    }
     return true;
 }
 
 void MonitorManager::Shutdown() {
+    WaitForInitialRefresh();
+
     m_hwRunning = false;
     m_hwCv.notify_all();
     if (m_hwThread.joinable()) {
@@ -191,6 +210,8 @@ void MonitorManager::FreeMonitors() {
 }
 
 void MonitorManager::RefreshMonitors() {
+    std::lock_guard<std::mutex> lock(m_refreshMutex);
+
     // 1. Guardar en memoria el brillo actual antes de limpiar la lista
     for (const auto& m : m_monitors) {
         if (!m.deviceName.empty()) m_savedBrightness[m.deviceName] = m.current;

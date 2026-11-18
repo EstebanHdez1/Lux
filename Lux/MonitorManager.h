@@ -9,7 +9,7 @@ public:
     MonitorManager();
     ~MonitorManager();
 
-    bool Init(CWmiBrightness* pWmi, SettingsManager* pSettings = nullptr);
+    bool Init(CWmiBrightness* pWmi, SettingsManager* pSettings = nullptr, bool asyncInitialRefresh = true);
     void Shutdown();
 
     void RefreshMonitors();
@@ -17,12 +17,21 @@ public:
 
     void ApplyBrightness(size_t index, int value);
 
-    const std::vector<MonitorEntry>& GetMonitors() const { return m_monitors; }
-    size_t GetMonitorCount() const { return m_monitors.size(); }
+    const std::vector<MonitorEntry>& GetMonitors() const {
+        const_cast<MonitorManager*>(this)->WaitForInitialRefresh();
+        return m_monitors;
+    }
+    size_t GetMonitorCount() const {
+        const_cast<MonitorManager*>(this)->WaitForInitialRefresh();
+        return m_monitors.size();
+    }
     const MonitorEntry* GetMonitor(size_t index) const {
+        const_cast<MonitorManager*>(this)->WaitForInitialRefresh();
         if (index < m_monitors.size()) return &m_monitors[index];
         return nullptr;
     }
+
+    void WaitForInitialRefresh();
 
     static std::wstring GetEDIDMonitorName(HMONITOR hMonitor);
 
@@ -50,4 +59,9 @@ private:
     std::condition_variable m_hwCv;
     std::map<size_t, int> m_pendingBrightness;
     std::atomic<bool> m_hwRunning{ false };
+
+    // Sincronización de refresco y arranque asíncrono
+    std::mutex m_refreshMutex;
+    std::thread m_initThread;
+    std::atomic<bool> m_initialRefreshDone{ false };
 };

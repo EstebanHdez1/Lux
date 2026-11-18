@@ -8,12 +8,15 @@ static const int BASE_ROW_HEIGHT  = 74;
 bool LuxApp::Init(HINSTANCE hInst) {
     m_hInst = hInst;
 
-    // Limpiar restos de actualizaciones anteriores (.old / .new)
+    // Limpiar restos de actualizaciones anteriores (.old / .new) si existen
     Updater::CleanOldFiles();
+
+    // Limpiar preferencias de GPU legadas para evitar despertar GPU dedicada al arrancar
+    LuxUtils::CleanLegacyGpuPreferences();
 
     m_msgTaskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
 
-    // Activar modo de alto rendimiento y prioridad en Windows
+    // Activar modo de prioridad estándar respetuoso con el inicio de Windows
     LuxUtils::ConfigureWindowsPerformanceMode();
 
     // Inicializar GDI+ con antialiasing nativo
@@ -26,8 +29,9 @@ bool LuxApp::Init(HINSTANCE hInst) {
     m_pFontSmall = new Gdiplus::Font(&fontFam, 9.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
 
     LuxUtils::InitDarkModeAPIs();
-    m_wmi.Init();
-    m_monitorMgr.Init(&m_wmi, &m_settings);
+
+    // Detección inicial de monitores y hardware en segundo plano (impacto ultra bajo en inicio)
+    m_monitorMgr.Init(&m_wmi, &m_settings, /*asyncInitialRefresh=*/true);
 
     m_darkMode = m_settings.IsDarkEffective();
     LuxUtils::SetPreferredThemeMode(m_darkMode);

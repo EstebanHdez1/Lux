@@ -117,43 +117,121 @@ UpdateCheckResult Updater::CheckForUpdate() {
     result.latestVersion = latestVer;
 
     // Buscar en los assets de GitHub Releases:
-    // Prioridad 1: Versión portable en archivo .zip (ej. Lux-v1.0.2-Windows-Portable.zip)
-    std::string downloadUrlStr;
-    size_t zipPos = json.find(".zip");
-    if (zipPos != std::string::npos) {
-        size_t urlTagPos = json.rfind("\"browser_download_url\"", zipPos);
-        if (urlTagPos != std::string::npos) {
-            size_t valStart = json.find("https://", urlTagPos);
-            if (valStart != std::string::npos && valStart < zipPos) {
-                downloadUrlStr = json.substr(valStart, (zipPos + 4) - valStart);
-            }
-        }
-    }
+    // Prioridad 1: Binario directo Lux.exe (instalación rápida, atómica y sin dependencias)
+    // Prioridad 2: Paquete portable en archivo .zip
+    std::string bestExeUrl;
+    std::string bestZipUrl;
 
-    // Prioridad 2: Fallback a archivo binario .exe directo
-    if (downloadUrlStr.empty()) {
-        size_t exePos = json.find(".exe");
-        if (exePos != std::string::npos) {
-            size_t urlTagPos = json.rfind("\"browser_download_url\"", exePos);
-            if (urlTagPos != std::string::npos) {
-                size_t valStart = json.find("https://", urlTagPos);
-                if (valStart != std::string::npos && valStart < exePos) {
-                    downloadUrlStr = json.substr(valStart, (exePos + 4) - valStart);
+    size_t assetsPos = json.find("\"assets\":");
+    if (assetsPos != std::string::npos) {
+        size_t searchPos = assetsPos;
+        const std::string key = "\"browser_download_url\"";
+        while (true) {
+            size_t tagPos = json.find(key, searchPos);
+            if (tagPos == std::string::npos) break;
+
+            size_t colonPos = json.find(':', tagPos + key.length());
+            if (colonPos == std::string::npos) break;
+
+            size_t quoteStart = json.find('"', colonPos);
+            if (quoteStart == std::string::npos) break;
+
+            size_t quoteEnd = json.find('"', quoteStart + 1);
+            if (quoteEnd == std::string::npos) break;
+
+            std::string url = json.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+            searchPos = quoteEnd + 1;
+
+            if (url.rfind("https://", 0) == 0) {
+                std::string urlLower = url;
+                for (char& c : urlLower) c = static_cast<char>(tolower(c));
+
+                if (urlLower.length() >= 4 && urlLower.compare(urlLower.length() - 4, 4, ".exe") == 0) {
+                    if (bestExeUrl.empty()) bestExeUrl = url;
+                } else if (urlLower.length() >= 4 && urlLower.compare(urlLower.length() - 4, 4, ".zip") == 0) {
+                    if (bestZipUrl.empty()) bestZipUrl = url;
                 }
             }
         }
     }
 
-    if (!downloadUrlStr.empty()) {
-        result.downloadUrl = std::wstring(downloadUrlStr.begin(), downloadUrlStr.end());
+    std::string selectedUrl = !bestExeUrl.empty() ? bestExeUrl : bestZipUrl;
+
+    if (!selectedUrl.empty()) {
+        result.downloadUrl = std::wstring(selectedUrl.begin(), selectedUrl.end());
     } else {
-        // Enlace de respaldo a la página de releases
+        // Enlace de respaldo a la página oficial de releases
         result.downloadUrl = GITHUB_REPO_URL + std::wstring(L"/releases");
     }
 
     result.success = true;
     result.updateAvailable = IsNewerVersion(latestVer, APP_VERSION);
     return result;
+}
+
+static bool DownloadFileDirect(const std::wstring& url, const std::wstring& destPath, std::wstring& outError) {
+    HINTERNET hInternet = InternetOpenW(L"Lux-Updater", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+    if (!hInternet) {
+        outError = L"No se pudo inicializar la conexión a Internet.";
+        return false;
+    }
+
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_SECURE | INTERNET_FLAG_NO_CACHE_WRITE;
+    const wchar_t* headers = L"User-Agent: Lux-App\r\nAccept: */*\r\n";
+
+    HINTERNET hUrl = InternetOpenUrlW(hInternet, url.c_str(), headers, -1, flags, 0);
+    if (!hUrl) {
+        InternetCloseHandle(hInternet);
+        outError = L"No se pudo abrir la dirección de descarga del servidor.";
+        return false;
+    }
+
+    DWORD statusCode = 0;
+    DWORD statusSize = sizeof(statusCode);
+    if (HttpQueryInfoW(hUrl, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &statusCode, &statusSize, nullptr)) {
+        if (statusCode != 200) {
+            InternetCloseHandle(hUrl);
+            InternetCloseHandle(hInternet);
+            wchar_t codeBuf[64];
+            swprintf_s(codeBuf, L"El servidor respondió con código HTTP %u.", statusCode);
+            outError = codeBuf;
+            return false;
+        }
+    }
+
+    HANDLE hFile = CreateFileW(destPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        InternetCloseHandle(hUrl);
+        InternetCloseHandle(hInternet);
+        outError = L"No se pudo crear el archivo temporal de destino en disco.";
+        return false;
+    }
+
+    BYTE buffer[16384];
+    DWORD bytesRead = 0;
+    DWORD bytesWritten = 0;
+    bool writeFailed = false;
+    DWORD totalDownloaded = 0;
+
+    while (InternetReadFile(hUrl, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+        if (!WriteFile(hFile, buffer, bytesRead, &bytesWritten, nullptr) || bytesWritten != bytesRead) {
+            writeFailed = true;
+            break;
+        }
+        totalDownloaded += bytesRead;
+    }
+
+    CloseHandle(hFile);
+    InternetCloseHandle(hUrl);
+    InternetCloseHandle(hInternet);
+
+    if (writeFailed || totalDownloaded < 1024) {
+        DeleteFileW(destPath.c_str());
+        outError = writeFailed ? L"Error al escribir datos en disco." : L"El archivo descargado está incompleto o dañado.";
+        return false;
+    }
+
+    return true;
 }
 
 static std::wstring FindFileRecursive(const std::wstring& dir, const std::wstring& targetFilename) {
@@ -210,17 +288,17 @@ bool Updater::ApplyUpdate(const std::wstring& downloadUrl, std::wstring& outErro
         std::wstring tempZip = tempDir + L"Lux_Portable_Update.zip";
         std::wstring tempExtract = tempDir + L"Lux_Portable_Extract";
 
-        // 1. Descargar paquete ZIP portable
+        // 1. Descargar paquete ZIP portable con WinINet nativo
         DeleteFileW(tempZip.c_str());
-        HRESULT hr = URLDownloadToFileW(nullptr, downloadUrl.c_str(), tempZip.c_str(), 0, nullptr);
-        if (FAILED(hr)) {
-            outError = L"Error al descargar la versión portable.";
-            DeleteFileW(tempZip.c_str());
+        if (!DownloadFileDirect(downloadUrl, tempZip, outError)) {
             return false;
         }
 
-        // 2. Crear directorio de extracción y descomprimir con tar.exe nativo de Windows
+        // 2. Limpiar directorio previo y descomprimir con tar.exe nativo
+        std::wstring cleanCmd = L"cmd.exe /c if exist \"" + tempExtract + L"\" rd /s /q \"" + tempExtract + L"\"";
+        _wsystem(cleanCmd.c_str());
         CreateDirectoryW(tempExtract.c_str(), nullptr);
+
         std::wstring cmd = L"tar.exe -xf \"" + tempZip + L"\" -C \"" + tempExtract + L"\"";
         STARTUPINFOW si{ sizeof(si) };
         si.dwFlags = STARTF_USESHOWWINDOW;
@@ -252,11 +330,9 @@ bool Updater::ApplyUpdate(const std::wstring& downloadUrl, std::wstring& outErro
         // Limpiar archivo temporal zip
         DeleteFileW(tempZip.c_str());
     } else {
-        // Descarga directa tradicional de ejecutable
-        HRESULT hr = URLDownloadToFileW(nullptr, downloadUrl.c_str(), newExe.c_str(), 0, nullptr);
-        if (FAILED(hr)) {
-            outError = L"Error al descargar la nueva versión.";
-            DeleteFileW(newExe.c_str());
+        // Descarga directa limpia de ejecutable con WinINet
+        DeleteFileW(newExe.c_str());
+        if (!DownloadFileDirect(downloadUrl, newExe, outError)) {
             return false;
         }
     }
@@ -277,8 +353,8 @@ bool Updater::ApplyUpdate(const std::wstring& downloadUrl, std::wstring& outErro
         return false;
     }
 
-    // 4. Iniciar la nueva versión
-    HINSTANCE hInst = ShellExecuteW(nullptr, L"open", currentExe.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    // 4. Iniciar la nueva versión pasando --restart para que espere la liberación del mutex
+    HINSTANCE hInst = ShellExecuteW(nullptr, L"open", currentExe.c_str(), L"--restart", nullptr, SW_SHOWNORMAL);
     if (reinterpret_cast<INT_PTR>(hInst) <= 32) {
         outError = L"Actualizado con éxito, pero ocurrió un error al reiniciar la aplicación.";
         return false;
@@ -293,6 +369,13 @@ void Updater::CleanOldFiles() {
     std::wstring currentExe = LuxUtils::GetExePath();
     std::wstring oldExe = currentExe + L".old";
     std::wstring newExe = currentExe + L".new";
-    DeleteFileW(oldExe.c_str());
-    DeleteFileW(newExe.c_str());
+
+    DWORD attrOld = GetFileAttributesW(oldExe.c_str());
+    if (attrOld != INVALID_FILE_ATTRIBUTES && !(attrOld & FILE_ATTRIBUTE_DIRECTORY)) {
+        DeleteFileW(oldExe.c_str());
+    }
+    DWORD attrNew = GetFileAttributesW(newExe.c_str());
+    if (attrNew != INVALID_FILE_ATTRIBUTES && !(attrNew & FILE_ATTRIBUTE_DIRECTORY)) {
+        DeleteFileW(newExe.c_str());
+    }
 }

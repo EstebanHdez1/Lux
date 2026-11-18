@@ -6,6 +6,10 @@ CWmiBrightness::~CWmiBrightness() {
 
 bool CWmiBrightness::Init() {
     std::lock_guard<std::mutex> lock(m_wmiMutex);
+    return InitInternal();
+}
+
+bool CWmiBrightness::InitInternal() {
     if (m_pSvc) return true; // ya inicializado
 
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -37,7 +41,7 @@ void CWmiBrightness::Shutdown() {
 
 bool CWmiBrightness::EnumerateInstances(std::vector<std::pair<std::wstring, int>>& out) {
     std::lock_guard<std::mutex> lock(m_wmiMutex);
-    if (!m_pSvc) return false;
+    if (!m_pSvc && !InitInternal()) return false;
 
     IEnumWbemClassObject* pEnum = nullptr;
     HRESULT hr = m_pSvc->ExecQuery(
@@ -64,7 +68,7 @@ bool CWmiBrightness::EnumerateInstances(std::vector<std::pair<std::wstring, int>
 
 bool CWmiBrightness::SetBrightness(const std::wstring& instanceName, int value) {
     std::lock_guard<std::mutex> lock(m_wmiMutex);
-    if (!m_pSvc) return false;
+    if (!m_pSvc && !InitInternal()) return false;
     std::wstring path = L"WmiMonitorBrightnessMethods.InstanceName=\"" + instanceName + L"\"";
 
     IWbemClassObject *pClass = nullptr, *pInDef = nullptr, *pIn = nullptr, *pOut = nullptr;

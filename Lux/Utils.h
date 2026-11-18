@@ -27,6 +27,7 @@ namespace LuxUtils {
 
     // Ajustes de rendimiento y recursos
     void ConfigureWindowsPerformanceMode();
+    void CleanLegacyGpuPreferences();
     void PurgeWorkingSet();
 
     // Renderizado vectorial del logo de Lux

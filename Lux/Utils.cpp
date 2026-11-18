@@ -74,45 +74,19 @@ namespace LuxUtils {
     }
 
     void ConfigureWindowsPerformanceMode() {
-        // 1. Elevar prioridad para que la respuesta de UI y atajos sea inmediata
-        SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+        // Ejecución estándar con prioridad normal para no penalizar el impacto de inicio en Windows Task Manager
+        SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
+    }
 
-        // 2. Desactivar el Power Throttling / limitación de velocidad de Windows 11
-        #ifndef PROCESS_POWER_THROTTLING_CURRENT_VERSION
-        #define PROCESS_POWER_THROTTLING_CURRENT_VERSION 1
-        #endif
-        #ifndef PROCESS_POWER_THROTTLING_EXECUTION_SPEED
-        #define PROCESS_POWER_THROTTLING_EXECUTION_SPEED 0x1
-        #endif
-
-        HMODULE hKernel = GetModuleHandleW(L"kernel32.dll");
-        if (hKernel) {
-            using fnSetProcessInformation = BOOL(WINAPI*)(HANDLE, PROCESS_INFORMATION_CLASS, LPVOID, DWORD);
-            auto pSetProcessInfo = reinterpret_cast<fnSetProcessInformation>(GetProcAddress(hKernel, "SetProcessInformation"));
-            if (pSetProcessInfo) {
-                struct {
-                    ULONG Version;
-                    ULONG ControlMask;
-                    ULONG StateMask;
-                } throttling{};
-                throttling.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-                throttling.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
-                throttling.StateMask = 0; // 0 = Sin limitación de velocidad (Alto rendimiento)
-                pSetProcessInfo(GetCurrentProcess(), static_cast<PROCESS_INFORMATION_CLASS>(9), &throttling, sizeof(throttling));
-            }
-        }
-
-        // 3. Registrar en Preferencias de Gráficos de Windows (UserGpuPreferences): "GpuPreference=2;" (Alto Rendimiento)
+    void CleanLegacyGpuPreferences() {
+        // Limpiar registros antiguos de GPU para evitar que Windows despierte la tarjeta gráfica dedicada en portátiles
         std::wstring exePath = GetExePath();
         if (!exePath.empty()) {
             HKEY hKey;
-            if (RegCreateKeyExW(HKEY_CURRENT_USER,
+            if (RegOpenKeyExW(HKEY_CURRENT_USER,
                 L"Software\\Microsoft\\DirectX\\UserGpuPreferences",
-                0, nullptr, 0, KEY_SET_VALUE, nullptr, &hKey, nullptr) == ERROR_SUCCESS) {
-                const wchar_t* pref = L"GpuPreference=2;";
-                RegSetValueExW(hKey, exePath.c_str(), 0, REG_SZ,
-                    reinterpret_cast<const BYTE*>(pref),
-                    static_cast<DWORD>((wcslen(pref) + 1) * sizeof(wchar_t)));
+                0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+                RegDeleteValueW(hKey, exePath.c_str());
                 RegCloseKey(hKey);
             }
         }
